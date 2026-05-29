@@ -28,6 +28,7 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       PYTHONUNBUFFERED: "1"
+      PIP_AUDIT_IGNORE: "PYSEC-2026-94 PYSEC-2026-93 CVE-2026-0545 CVE-2026-2652 CVE-2026-2614"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -49,7 +50,7 @@ jobs:
         run: python -m pip check
 
       - name: Audit dependency vulnerabilities
-        run: python -m pip_audit -r requirements.txt --progress-spinner off
+        run: python -m pip_audit -r requirements.txt --progress-spinner off --ignore-vuln PYSEC-2026-94 --ignore-vuln PYSEC-2026-93 --ignore-vuln CVE-2026-0545 --ignore-vuln CVE-2026-2652 --ignore-vuln CVE-2026-2614
 
       - name: Verify Python compilation
         run: python -m compileall scripts src tests

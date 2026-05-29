@@ -1,7 +1,7 @@
 ipykernel
 requests
 pandas
-pyarrow
+pyarrow==23.0.1
 azure-ai-ml
 azureml-mlflow
 azure-identity
