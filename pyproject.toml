@@ -1,0 +1,58 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = [
+  ".venv",
+  "artifacts",
+  "data",
+  "EXPERIMENTSV2",
+  "mlruns",
+  "temp",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q -p no:cacheprovider"
+
+[tool.coverage.run]
+branch = true
+relative_files = true
+omit = [
+  "tests/*",
+  "scripts/serve_experiment_dashboard.py",
+  "scripts/serve_experiment_dashboard_v2.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+precision = 1
+include = [
+  "scripts/azure_train_request_job.py",
+  "scripts/train.py",
+  "src/utils/azure_ml.py",
+  "src/utils/market_hours.py",
+  "src/utils/path_config.py",
+]
+
+[tool.mypy]
+python_version = "3.11"
+pretty = true
+show_error_codes = true
+warn_unused_configs = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+check_untyped_defs = true
+exclude = '''(?x)(
+    ^data/
+  | ^artifacts/
+  | ^EXPERIMENTSV2/
+  | ^mlruns/
+  | ^temp/
+  | ^\.venv/
+)'''

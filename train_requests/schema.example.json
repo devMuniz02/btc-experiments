@@ -1,0 +1,41 @@
+{
+  "request_id": "20260528-120000-lstm-35k-base",
+  "status": "pending",
+  "scope": "fixed_5k",
+  "runner": "local",
+  "experiment": 1,
+  "family": "LSTM",
+  "train_length": "35K",
+  "window_length": "",
+  "model_variation": "BASE",
+  "time_variants": [
+    "FULL"
+  ],
+  "env": "ternary",
+  "selection_mode": "all",
+  "overwrite": false,
+  "output_dir": "EXPERIMENTSV2/1",
+  "requested_at": "2026-05-28T18:00:00+00:00",
+  "requested_by": "local",
+  "commit_sha": "",
+  "mlflow": {
+    "enabled": true,
+    "experiment_name": "fixed-5k-train-requests",
+    "tracking_uri": "",
+    "tags": {
+      "scope": "fixed_5k",
+      "runner": "local"
+    }
+  },
+  "azure": {
+    "storage_container": "",
+    "storage_prefix": "",
+    "artifact_root_uri": "",
+    "dashboard_uri": "",
+    "model_artifact_uri": "",
+    "request_snapshot_blob_uri": "",
+    "result_blob_uri": "",
+    "published_at": ""
+  },
+  "result": {}
+}
