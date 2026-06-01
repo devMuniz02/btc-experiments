@@ -1,143 +1,48 @@
-# Byte-compiled / optimized / DLL files
+# Python/runtime caches
 __pycache__/
 *.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-*.bat
-*.ps1
-*.ps1.example
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff
-instance/
-.webassets-cache
-
-# Scrapy stuff
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Tool caches
 .mypy_cache/
-.dmypy.json
-dmypy.json
-.pyre/
-.pytype/
-cython_debug/
+.pytest_cache/
 .ruff_cache/
-.abstra/
-.cursorignore
-.cursorindexingignore
-.pixi
-.pdm-python
-.pdm-build/
-__pypackages__/
-marimo/_static/
-marimo/_lsp/
-__marimo__/
+.coverage
 
-# Local/private files
-PRIVATEDONTSHARE.text
+# Archived migration material
+legacy_unused/
 
-# App/cache artifacts
-.streamlit_cache/
+# Local datasets and generated ledgers
+data/**/*.parquet
+data/**/*.csv
+!data/**/.gitkeep
 
-# BTC generated artifacts
-artifacts/
-data/
-bitcoin/*.json
-bitcoin/*.csv
-bitcoin/*.html
-bitcoin/saved_models/
-bitcoin/__pycache__/
-bitcoin/train.ipynb
-last_prediction.before_rerun.json
-EXPERIMENTSV2/
-EXPERIMENTS/**
-!EXPERIMENTS/
-!EXPERIMENTS/EXPERIMENTS.md
-mlruns/
+# Model binaries, checkpoints, and generated model outputs
+models/**/weights.bin
+models/**/*.pt
+models/**/*.pth
+models/**/*.pkl
+models/**/*.joblib
+models/dev/var_*/*
+!models/dev/var_*/.gitkeep
+!models/prod/model_slot_*/.gitkeep
 
-# Local-only workspace files not present on origin/main
-.venv_codex/
-btc_history.csv
-local_market_hours_daily_pipeline_run.txt
-local_market_hours_pipeline_run.txt
-local_pipeline_run.txt
-temp/
+# Reference-counted scaler binaries
+scalers/**/*.pkl
+!scalers/**/.gitkeep
+
+# Local automation runtime state
+automation/*.ps1
+automation/run_requests/*.yaml
+automation/run_requests/*.yml
+automation/runs_done/*.yaml
+automation/runs_done/*.yml
+automation/delete_requests/*.yaml
+automation/delete_requests/*.yml
+automation/deleted_runs/*.yaml
+automation/deleted_runs/*.yml
+automation/rejected_runs/*.yaml
+automation/rejected_runs/*.yml
+!automation/**/.gitkeep
+!automation/**/*.example
+!automation/config.yaml
+
+# Local logs
+*.log

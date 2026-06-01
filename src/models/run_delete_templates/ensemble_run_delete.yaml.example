@@ -1,0 +1,8 @@
+model_type: ensemble
+variation_id: 1
+train_mode: static_baseline
+model_id: replace_with_model_id
+hyperparameters:
+  models_pool:
+    - replace_with_member_model_id
+  voting_mechanism: hard_majority

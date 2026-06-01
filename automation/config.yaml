@@ -1,0 +1,11 @@
+mlflow_enabled: false
+azure_enabled: false
+tracking_mode: local_buffer
+tracking_buffer_flush: disabled
+production_metric: mean_probability
+active_slots:
+  model_slot_1: null
+  model_slot_2: null
+  model_slot_3: null
+  model_slot_4: null
+  model_slot_5: null

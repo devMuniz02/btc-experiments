@@ -1,0 +1,9 @@
+model_type: lstm
+variation_id: 1
+train_mode: static_baseline
+model_id: replace_with_model_id
+hyperparameters:
+  sequence_length: 24
+  hidden_dim: 128
+  epochs: 20
+  learning_rate: 0.001
