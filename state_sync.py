@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from automation.update_readme import update_readme
 from src.utils import QuantStreamPaths, ensure_quant_stream_layout
 
 
@@ -23,6 +24,17 @@ def sync_global_results(paths: QuantStreamPaths, variation_name: str, *, check: 
     if not results_path.exists():
         return messages
     results = pd.read_parquet(results_path)
+    changed = False
+    if "actual" in results.columns and "target" not in results.columns:
+        messages.append(f"{variation_name}: rename actual column to target")
+        if not check:
+            results = results.rename(columns={"actual": "target"})
+            changed = True
+    if "actual" in results.columns and "target" in results.columns:
+        messages.append(f"{variation_name}: drop duplicate actual column")
+        if not check:
+            results = results.drop(columns=["actual"])
+            changed = True
     active = active_model_ids(paths, variation_name)
     stale_columns = []
     for column in results.columns:
@@ -33,7 +45,10 @@ def sync_global_results(paths: QuantStreamPaths, variation_name: str, *, check: 
     if stale_columns:
         messages.append(f"{variation_name}: stale result columns: {', '.join(stale_columns)}")
         if not check:
-            results.drop(columns=stale_columns).to_parquet(results_path, index=False)
+            results = results.drop(columns=stale_columns)
+            changed = True
+    if changed and not check:
+        results.to_parquet(results_path, index=False)
     for model_id in sorted(active):
         if f"{model_id}_pred" not in results.columns or f"{model_id}_prob" not in results.columns:
             messages.append(f"{variation_name}: model folder lacks result columns: {model_id}")
@@ -89,6 +104,7 @@ def run_sync(root: Path | None = None, *, check: bool = False) -> list[str]:
             messages.extend(sync_global_results(paths, variation_dir.name, check=check))
     messages.extend(sync_scalers(paths, check=check))
     messages.extend(flush_tracking_buffers(paths, check=check))
+    update_readme(paths.root)
     return messages
 
 

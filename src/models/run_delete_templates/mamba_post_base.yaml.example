@@ -1,0 +1,16 @@
+model_type: mamba_post_base
+variation_id: 1
+train_mode: post_base
+force_run: false
+hyperparameters:
+  sequence_length: 24
+  hidden_dim: 192
+  num_layers: 3
+  action_dim: 3
+  post_base_variant: ppo_full
+  total_updates: 12
+  ppo_epochs: 4
+  minibatch_size: 2048
+  learning_rate: 0.0002
+  base_model_id: ""
+  device: auto

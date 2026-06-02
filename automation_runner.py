@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 
 from src.models.ensemble import build_ensemble_predictions
+from src.models.training import train_model
+from automation.update_readme import update_readme
 from src.utils import (
     QuantStreamPaths,
     canonicalize_payload,
@@ -22,13 +24,31 @@ from src.utils import (
     write_yaml_file,
 )
 
-SUPPORTED_MODEL_TYPES = {"ensemble", "lstm", "xgboost"}
+SUPPORTED_MODEL_TYPES = {
+    "actor_critic",
+    "bc",
+    "dagger",
+    "ensemble",
+    "lstm",
+    "mamba",
+    "mamba_post_base",
+    "nn",
+    "ppo",
+    "ppo_continue",
+    "rf",
+    "transformer",
+    "xgboost",
+}
 SUPPORTED_TRAIN_MODES = {
+    "post_base",
+    "reinforcement_ppo",
+    "sliding_window_continue",
+    "sliding_window_current_only",
+    "sliding_window_retrain",
     "static_baseline",
     "windowed_continue",
     "windowed_isolated",
     "windowed_retrain",
-    "reinforcement_ppo",
 }
 REQUIRED_ROOT_KEYS = {"model_type", "variation_id", "train_mode", "hyperparameters"}
 
@@ -133,14 +153,24 @@ def heuristic_predictions(test_frame: pd.DataFrame) -> tuple[np.ndarray, np.ndar
 def read_global_results(paths: QuantStreamPaths, variation_id: int, test_frame: pd.DataFrame) -> pd.DataFrame:
     result_path = paths.global_results_path(variation_id)
     if result_path.exists():
-        return pd.read_parquet(result_path)
-    return pd.DataFrame(
+        results = pd.read_parquet(result_path)
+        if "actual" in results.columns and "target" not in results.columns:
+            results = results.rename(columns={"actual": "target"})
+        if "actual" in results.columns and "target" in results.columns:
+            results = results.drop(columns=["actual"])
+        if "target" not in results.columns and "target" in test_frame.columns:
+            results["target"] = test_frame["target"].to_numpy()
+        return results
+    base = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(test_frame["timestamp"], utc=True).astype(str),
             "open": test_frame["open"].to_numpy(),
             "close": test_frame["close"].to_numpy(),
         }
     )
+    if "target" in test_frame.columns:
+        base["target"] = test_frame["target"].to_numpy()
+    return base
 
 
 def write_model_artifacts(
@@ -153,9 +183,11 @@ def write_model_artifacts(
 ) -> None:
     model_dir = paths.variation_models_dir(variation_id) / model_id
     model_dir.mkdir(parents=True, exist_ok=True)
-    (model_dir / "weights.bin").write_bytes(
-        json.dumps({"model_id": model_id, "model_type": payload["model_type"]}, sort_keys=True).encode("utf-8")
-    )
+    weights_path = model_dir / "weights.bin"
+    if not weights_path.exists():
+        weights_path.write_bytes(
+            json.dumps({"model_id": model_id, "model_type": payload["model_type"]}, sort_keys=True).encode("utf-8")
+        )
     metadata = {**payload, "model_id": model_id, "finalized_at": utc_now_iso()}
     (model_dir / "hyperparameters.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
     tracking_line = json.dumps(
@@ -203,17 +235,35 @@ def process_run_request(paths: QuantStreamPaths, request_path: Path) -> RequestO
         if not force_run and has_tombstone(paths, payload):
             return reject_request(paths, request_path, "Request matches a deleted tombstone configuration.")
         variation_id = int(payload["variation_id"])
-        _train_frame, test_frame = split_train_test(load_clean_frame(paths, variation_id))
+        clean_frame = load_clean_frame(paths, variation_id)
+        _train_frame, test_frame = split_train_test(clean_frame)
         results = read_global_results(paths, variation_id, test_frame)
         if str(payload["model_type"]).lower() == "ensemble":
             predictions, probabilities = build_ensemble_predictions(results, payload["hyperparameters"])
+            training_payload: dict[str, Any] = {"history": [], "backend": "ensemble"}
         else:
-            predictions, probabilities = heuristic_predictions(test_frame)
+            model_dir = paths.variation_models_dir(variation_id) / model_id
+            training_payload = train_model(
+                model_type=str(payload["model_type"]).lower(),
+                train_mode=str(payload["train_mode"]).lower(),
+                clean_frame=clean_frame,
+                hyperparameters=payload["hyperparameters"],
+                output_dir=model_dir,
+            )
+            predictions = training_payload["predictions"]
+            probabilities = training_payload["probabilities"]
         results[f"{model_id}_pred"] = predictions
         results[f"{model_id}_prob"] = probabilities
         paths.global_results_path(variation_id).parent.mkdir(parents=True, exist_ok=True)
         results.to_parquet(paths.global_results_path(variation_id), index=False)
-        write_model_artifacts(paths, variation_id, model_id, payload, predictions, probabilities)
+        enriched_payload = {
+            **payload,
+            "training_backend": training_payload.get("backend", ""),
+            "training_device": training_payload.get("device", ""),
+            "scaler_path": training_payload.get("scaler_path", ""),
+            "training_history": training_payload.get("history", []),
+        }
+        write_model_artifacts(paths, variation_id, model_id, enriched_payload, predictions, probabilities)
         done_payload = {**payload, "model_id": model_id, "status": "completed", "completed_at": utc_now_iso()}
         done_path = paths.runs_done_dir / f"{model_id}.yaml"
         write_yaml_file(done_path, done_payload)
@@ -262,6 +312,7 @@ def run_once(root: Path | None = None) -> list[RequestOutcome]:
         outcomes.append(process_run_request(paths, request_path))
     for request_path in sorted(paths.delete_requests_dir.glob("*.y*ml")):
         outcomes.append(process_delete_request(paths, request_path))
+    update_readme(paths.root)
     return outcomes
 
 

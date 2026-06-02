@@ -1,0 +1,13 @@
+model_type: mamba
+variation_id: 1
+train_mode: static_baseline
+force_run: false
+hyperparameters:
+  sequence_length: 24
+  hidden_dim: 192
+  num_layers: 3
+  epochs: 20
+  batch_size: 128
+  learning_rate: 0.001
+  device: auto
+  preload_to_device: true

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from src.models.training import train_model
+
 
 @dataclass(frozen=True)
 class XGBoostModelSpec:
@@ -17,3 +19,6 @@ def validate_hyperparameters(hyperparameters: dict[str, Any]) -> XGBoostModelSpe
         max_depth=int(hyperparameters.get("max_depth", 4)),
         learning_rate=float(hyperparameters.get("learning_rate", 0.03)),
     )
+
+
+__all__ = ["XGBoostModelSpec", "train_model", "validate_hyperparameters"]

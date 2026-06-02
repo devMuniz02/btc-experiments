@@ -1,4 +1,7 @@
 mlflow_enabled: false
+mlflow_synced: false
+mlflow_public_url: ""
+mlflow_public_access: false
 azure_enabled: false
 tracking_mode: local_buffer
 tracking_buffer_flush: disabled

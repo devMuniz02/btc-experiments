@@ -61,8 +61,17 @@ conda install -n $EnvName -c conda-forge `
     -y
 
 Write-Host "Installing pip dependencies..."
-conda run -n $EnvName python -m pip install --upgrade pip
-conda run -n $EnvName python -m pip install ccxt
+$PreviousPipRequireVirtualenv = $env:PIP_REQUIRE_VIRTUALENV
+$env:PIP_REQUIRE_VIRTUALENV = "false"
+conda run -n $EnvName python -m pip --isolated install --upgrade pip
+conda run -n $EnvName python -m pip --isolated install torch torchvision --index-url https://download.pytorch.org/whl/cu132
+conda run -n $EnvName python -m pip --isolated install ccxt
+if ($null -eq $PreviousPipRequireVirtualenv) {
+    Remove-Item Env:\PIP_REQUIRE_VIRTUALENV -ErrorAction SilentlyContinue
+}
+else {
+    $env:PIP_REQUIRE_VIRTUALENV = $PreviousPipRequireVirtualenv
+}
 
 Write-Host "Verifying active project checks..."
 conda run -n $EnvName python -m compileall automation_runner.py state_sync.py dashboard.py src

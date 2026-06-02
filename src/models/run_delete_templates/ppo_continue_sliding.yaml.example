@@ -1,0 +1,13 @@
+model_type: ppo_continue
+variation_id: 1
+train_mode: sliding_window_continue
+force_run: false
+hyperparameters:
+  sequence_length: 24
+  hidden_dim: 256
+  total_updates: 5
+  ppo_epochs: 4
+  minibatch_size: 256
+  learning_rate: 0.0003
+  previous_policy_kl_coef: 0.0
+  device: auto

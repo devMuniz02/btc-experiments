@@ -1,0 +1,12 @@
+model_type: dagger
+variation_id: 1
+train_mode: static_baseline
+force_run: false
+hyperparameters:
+  sequence_length: 24
+  hidden_dim: 256
+  rounds: 12
+  fit_epochs_per_round: 10
+  batch_size: 16
+  learning_rate: 0.001
+  device: auto

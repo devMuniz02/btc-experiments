@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,9 +22,18 @@ DEFAULT_VARIATION_ID = 1
 TRAIN_CANDLES = 100000
 TEST_CANDLES = 5000
 FEATURE_LOOKBACK_PADDING = 200
+BACKFILL_EXTRA_ROWS = 1000
 EXCHANGE_PAGE_LIMIT = 1000
 SYMBOL = "BTC/USDT"
 TIMEFRAME = "1h"
+LEGACY_VAR_1_CSV = PROJECT_ROOT / "legacy_unused" / "data" / "btc" / "btc_100k_train_5k_test_candles.csv"
+TIMEFRAME_MS = 60 * 60 * 1000
+HISTORICAL_BACKFILL_CANDIDATES: list[tuple[str, str]] = [
+    ("bitstamp", "BTC/USD"),
+    ("bitfinex", "BTC/USD"),
+    ("kraken", "BTC/USD"),
+    ("gemini", "BTC/USD"),
+]
 
 FEATURE_COLUMNS = [
     "open",
@@ -201,7 +211,14 @@ def fetch_ohlcv_range(
     exchange_id: str = "binance",
     symbol: str = SYMBOL,
 ) -> pd.DataFrame:
-    import ccxt
+    try:
+        import ccxt
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "Missing dependency 'ccxt'. Install it with "
+            "`conda run -n btc-quant-stream python -m pip install ccxt` "
+            "or rerun `powershell -ExecutionPolicy Bypass -File .\\setup_repo.ps1`."
+        ) from exc
 
     exchange_class = getattr(ccxt, exchange_id)
     exchange = exchange_class({"enableRateLimit": True, "timeout": 30000})
@@ -227,6 +244,119 @@ def fetch_ohlcv_range(
     frame = frame.drop_duplicates(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
     mask = (frame["timestamp"] >= start) & (frame["timestamp"] <= end)
     return frame.loc[mask].reset_index(drop=True)
+
+
+def fetch_ohlcv_backward_before(
+    *,
+    end_exclusive: pd.Timestamp,
+    min_rows: int,
+    exchange_id: str,
+    symbol: str,
+    batch_limit: int = EXCHANGE_PAGE_LIMIT,
+) -> pd.DataFrame:
+    import ccxt
+
+    exchange_class = getattr(ccxt, exchange_id)
+    exchange = exchange_class({"enableRateLimit": True, "timeout": 30000})
+    cursor_end_ms = int(pd.Timestamp(end_exclusive).timestamp() * 1000)
+    rows: list[list[Any]] = []
+    max_batches = math.ceil(int(min_rows) / int(batch_limit)) + 8
+
+    for _ in range(max_batches):
+        since_ms = cursor_end_ms - (int(batch_limit) * TIMEFRAME_MS)
+        candles = exchange.fetch_ohlcv(symbol, timeframe=TIMEFRAME, since=since_ms, limit=int(batch_limit))
+        if not candles:
+            break
+        filtered = [candle for candle in candles if int(candle[0]) < cursor_end_ms]
+        if not filtered:
+            break
+        rows.extend(filtered)
+        earliest_ms = int(filtered[0][0])
+        if earliest_ms >= cursor_end_ms:
+            break
+        cursor_end_ms = earliest_ms
+        if len({int(row[0]) for row in rows}) >= int(min_rows):
+            break
+
+    if not rows:
+        return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
+    frame = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], unit="ms", utc=True)
+    frame = frame.drop_duplicates(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
+    return frame.loc[frame["timestamp"] < end_exclusive].reset_index(drop=True)
+
+
+def fetch_historical_backfill_before(
+    *,
+    end_exclusive: pd.Timestamp,
+    min_rows: int,
+    preferred_exchange_id: str,
+    preferred_symbol: str,
+) -> pd.DataFrame:
+    candidates = [(preferred_exchange_id, preferred_symbol), *HISTORICAL_BACKFILL_CANDIDATES]
+    seen: set[tuple[str, str]] = set()
+    failures: list[str] = []
+    for exchange_id, symbol in candidates:
+        key = (exchange_id, symbol)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            frame = fetch_ohlcv_backward_before(
+                end_exclusive=end_exclusive,
+                min_rows=min_rows,
+                exchange_id=exchange_id,
+                symbol=symbol,
+            )
+            if len(frame) < min_rows:
+                raise RuntimeError(
+                    f"{exchange_id} produced only {len(frame)} pre-anchor candles after backward batching; "
+                    f"need {min_rows}."
+                )
+            print(f"Fetched {len(frame)} historical backfill candles from {exchange_id} using {symbol}.")
+            return frame
+        except Exception as exc:
+            failures.append(f"{exchange_id}:{symbol}: {exc}")
+            print(f"Backfill exchange attempt failed for {exchange_id} {symbol}: {exc}")
+    raise RuntimeError("Unable to fetch historical backfill candles before anchor.\n" + "\n".join(failures))
+
+
+def fetch_ohlcv_range_with_backfill(
+    *,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    primary_exchange_id: str,
+    primary_symbol: str,
+    backfill_exchange_id: str,
+    backfill_symbol: str,
+) -> pd.DataFrame:
+    primary = fetch_ohlcv_range(
+        start=start,
+        end=end,
+        exchange_id=primary_exchange_id,
+        symbol=primary_symbol,
+    )
+    if primary.empty:
+        return fetch_ohlcv_range(
+            start=start,
+            end=end,
+            exchange_id=backfill_exchange_id,
+            symbol=backfill_symbol,
+        )
+
+    primary_start = pd.Timestamp(primary["timestamp"].min()).tz_convert("UTC")
+    if primary_start <= start:
+        return primary
+
+    required_backfill_rows = int((primary_start - start) / pd.Timedelta(hours=1)) + BACKFILL_EXTRA_ROWS
+    backfill = fetch_historical_backfill_before(
+        end_exclusive=primary_start,
+        min_rows=required_backfill_rows,
+        preferred_exchange_id=backfill_exchange_id,
+        preferred_symbol=backfill_symbol,
+    )
+    combined = pd.concat([backfill, primary], ignore_index=True)
+    return combined.drop_duplicates(subset=["timestamp"], keep="last").sort_values("timestamp").reset_index(drop=True)
 
 
 def compute_rsi(close: pd.Series, period: int = 14) -> pd.Series:
@@ -309,13 +439,66 @@ def add_quant_stream_features(frame: pd.DataFrame) -> pd.DataFrame:
 def build_clean_matrix(raw_frame: pd.DataFrame, test_start: pd.Timestamp) -> pd.DataFrame:
     featured = add_quant_stream_features(raw_frame)
     featured["timestamp"] = pd.to_datetime(featured["timestamp"], utc=True)
-    start = test_start - pd.Timedelta(hours=TRAIN_CANDLES)
-    end = test_start + pd.Timedelta(hours=TEST_CANDLES - 1)
-    matrix = featured.loc[(featured["timestamp"] >= start) & (featured["timestamp"] <= end)].reset_index(drop=True)
     expected = TRAIN_CANDLES + TEST_CANDLES
+    anchor_matches = featured.index[featured["timestamp"] == test_start].to_numpy()
+    if len(anchor_matches) == 0:
+        earliest = featured["timestamp"].min()
+        latest = featured["timestamp"].max()
+        raise RuntimeError(
+            f"Fetched data does not contain test anchor {test_start.isoformat()}. "
+            f"Fetched exchange history after feature creation spans {earliest.isoformat()} to {latest.isoformat()}."
+        )
+    anchor_index = int(anchor_matches[0])
+    start_index = anchor_index - TRAIN_CANDLES
+    end_index = anchor_index + TEST_CANDLES
+    if start_index < 0 or end_index > len(featured):
+        earliest = featured["timestamp"].min()
+        latest = featured["timestamp"].max()
+        available_train = max(0, anchor_index)
+        available_test = max(0, len(featured) - anchor_index)
+        raise RuntimeError(
+            f"Expected {TRAIN_CANDLES} train rows before anchor and {TEST_CANDLES} test rows from anchor, "
+            f"but found {available_train} train rows and {available_test} test rows. "
+            f"Fetched exchange history after feature creation spans {earliest.isoformat()} to {latest.isoformat()}."
+        )
+    matrix = featured.iloc[start_index:end_index].reset_index(drop=True)
     if len(matrix) != expected:
-        raise RuntimeError(f"Expected {expected} clean rows for anchor {test_start.isoformat()}, found {len(matrix)}.")
+        earliest = featured["timestamp"].min()
+        latest = featured["timestamp"].max()
+        raise RuntimeError(
+            f"Expected {expected} clean rows for anchor {test_start.isoformat()}, found {len(matrix)}. "
+            f"The fetched exchange history after feature creation spans {earliest.isoformat()} "
+            f"to {latest.isoformat()}. "
+            "Use an exchange/symbol with enough BTC candles around the anchor, or pass a different anchor."
+        )
+    observed_anchor = pd.Timestamp(matrix["timestamp"].iloc[TRAIN_CANDLES]).tz_convert("UTC")
+    if observed_anchor != test_start:
+        raise RuntimeError(
+            f"Clean matrix anchor mismatch: expected {test_start.isoformat()}, found {observed_anchor.isoformat()}."
+        )
     return matrix
+
+
+def load_legacy_var_1_matrix(*, source_path: Path, test_start: pd.Timestamp) -> pd.DataFrame:
+    if not source_path.exists():
+        raise FileNotFoundError(f"Legacy reproducibility CSV not found: {source_path}")
+    frame = pd.read_csv(source_path, parse_dates=["timestamp"])
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
+    expected = TRAIN_CANDLES + TEST_CANDLES
+    if len(frame) != expected:
+        raise RuntimeError(f"Expected {expected} legacy rows in {source_path}, found {len(frame)}.")
+    observed_anchor = pd.Timestamp(frame["timestamp"].iloc[TRAIN_CANDLES]).tz_convert("UTC")
+    if observed_anchor != test_start:
+        raise RuntimeError(
+            f"Legacy CSV test anchor mismatch: expected {test_start.isoformat()}, "
+            f"found {observed_anchor.isoformat()} at row {TRAIN_CANDLES}."
+        )
+    frame = add_temporal_features(frame)
+    required_columns = ["timestamp", *FEATURE_COLUMNS, *TEMPORAL_FEATURE_COLUMNS, "target"]
+    missing = [column for column in required_columns if column not in frame.columns]
+    if missing:
+        raise RuntimeError(f"Legacy CSV is missing required columns after temporal feature enrichment: {missing}")
+    return frame[required_columns].replace([np.inf, -np.inf], np.nan).dropna().reset_index(drop=True)
 
 
 def ingest_variation(
@@ -324,13 +507,72 @@ def ingest_variation(
     test_start_date: str | None,
     root: Path | None = None,
     exchange_id: str = "binance",
+    symbol: str = SYMBOL,
+    backfill_exchange_id: str = "kraken",
+    backfill_symbol: str = "BTC/USD",
+    source: str = "auto",
+    source_path: Path | None = None,
 ) -> Path:
     paths = QuantStreamPaths(root=root or PROJECT_ROOT)
     ensure_quant_stream_layout(paths)
     test_start, padded_start, end = requested_bounds(test_start_date)
-    raw = fetch_ohlcv_range(start=padded_start, end=end, exchange_id=exchange_id)
-    clean = build_clean_matrix(raw, test_start)
+    resolved_source = str(source or "auto").strip().lower()
+    legacy_source_path = source_path or LEGACY_VAR_1_CSV
+    if resolved_source not in {"auto", "exchange", "legacy"}:
+        raise ValueError("source must be one of: auto, exchange, legacy.")
+    if resolved_source == "legacy":
+        clean = load_legacy_var_1_matrix(source_path=legacy_source_path, test_start=test_start)
+    else:
+        raw = fetch_ohlcv_range_with_backfill(
+            start=padded_start,
+            end=end,
+            primary_exchange_id=exchange_id,
+            primary_symbol=symbol,
+            backfill_exchange_id=backfill_exchange_id,
+            backfill_symbol=backfill_symbol,
+        )
+        clean = build_clean_matrix(raw, test_start)
     output_path = paths.clean_data_path(variation_id)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     clean.to_parquet(output_path, index=False, compression="zstd")
     return output_path
+
+
+def parse_ingest_args() -> Any:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate a Quant-Stream clean BTC variation dataset.")
+    parser.add_argument("command", choices=["ingest"], help="Dataset utility command.")
+    parser.add_argument("--variation_id", type=int, default=DEFAULT_VARIATION_ID)
+    parser.add_argument("--test_start_date", default="2025-10-08 15:00:00+00:00")
+    parser.add_argument("--exchange_id", default="binance")
+    parser.add_argument("--symbol", default=SYMBOL)
+    parser.add_argument("--backfill_exchange_id", default="kraken")
+    parser.add_argument("--backfill_symbol", default="BTC/USD")
+    parser.add_argument("--source", choices=["auto", "exchange", "legacy"], default="auto")
+    parser.add_argument("--source_path", default="")
+    parser.add_argument("--root", default="")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_ingest_args()
+    if args.command == "ingest":
+        output_path = ingest_variation(
+            variation_id=int(args.variation_id),
+            test_start_date=str(args.test_start_date),
+            root=Path(args.root).resolve() if args.root else None,
+            exchange_id=str(args.exchange_id),
+            symbol=str(args.symbol),
+            backfill_exchange_id=str(args.backfill_exchange_id),
+            backfill_symbol=str(args.backfill_symbol),
+            source=str(args.source),
+            source_path=Path(args.source_path).resolve() if args.source_path else None,
+        )
+        print(str(output_path))
+        return 0
+    raise RuntimeError(f"Unsupported command: {args.command}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,14 @@
+model_type: actor_critic
+variation_id: 1
+train_mode: post_base
+force_run: false
+hyperparameters:
+  sequence_length: 24
+  hidden_dim: 256
+  total_updates: 5
+  minibatch_size: 256
+  learning_rate: 0.0003
+  entropy_coef: 0.01
+  value_loss_coef: 0.5
+  base_model_id: ""
+  device: auto

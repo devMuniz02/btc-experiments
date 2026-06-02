@@ -13,8 +13,17 @@ Variation data is written to `data/var_X/btc_1h_clean.parquet`.
 
 For the first canonical variation:
 
-The ingestion helpers now live in `src/utils.py`. Call `ingest_variation()` from a local Python shell or notebook when
-you want to create `data/var_X/btc_1h_clean.parquet`.
+```powershell
+powershell -ExecutionPolicy Bypass -File .\automation\generate_var_1_dataset.ps1
+```
+
+The script uses the Conda environment `btc-quant-stream` and the fixed test anchor
+`2025-10-08 15:00:00+00:00`. The ingestion helpers live in `src/utils.py`; the script calls the active
+`python -m src.utils ingest` command to create `data/var_1/btc_1h_clean.parquet`.
+
+The canonical fetch policy uses Binance `BTC/USDT` for every row Binance can provide, because Binance is the live
+trading venue. Older pre-Binance rows are backfilled from Kraken `BTC/USD` only when needed to complete the fixed
+105,000 row matrix.
 
 The ingestion command fetches 100,000 one-hour candles before the test anchor and 5,000 after it, with extra lookback
 padding for technical indicators. Indicator calculations happen on unscaled OHLCV values.
@@ -32,6 +41,11 @@ python automation_runner.py --once
 
 Successful runs move to `automation/runs_done/[model_id].yaml`, write model assets under
 `models/dev/var_X/[model_id]/`, and append prediction columns to `data/var_X/global_results.parquet`.
+
+The active runner supports `lstm`, `transformer`, `mamba`, `nn`, `rf`, `xgboost`, `bc`, `dagger`, `ppo`,
+`ppo_continue`, `actor_critic`, `mamba_post_base`, and `ensemble`. Training modes include `static_baseline`,
+`sliding_window_current_only`, `sliding_window_continue`, `sliding_window_retrain`, `reinforcement_ppo`, and
+`post_base`.
 
 Rejected runs move to `automation/rejected_runs/` with a YAML comment explaining the failure.
 
