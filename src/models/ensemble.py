@@ -30,7 +30,7 @@ def unanimity_vote(predictions: np.ndarray) -> np.ndarray:
     output = []
     for row in predictions:
         unique = set(int(value) for value in row)
-        if len(unique) == 1 and 0 not in unique:
+        if len(unique) == 1:
             output.append(next(iter(unique)))
         else:
             output.append(0)
@@ -38,20 +38,20 @@ def unanimity_vote(predictions: np.ndarray) -> np.ndarray:
 
 
 def soft_average_vote(predictions: np.ndarray, probabilities: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    scores = {-1: np.zeros(len(predictions)), 0: np.zeros(len(predictions)), 1: np.zeros(len(predictions))}
-    counts = {-1: np.zeros(len(predictions)), 0: np.zeros(len(predictions)), 1: np.zeros(len(predictions))}
+    scores = {0: np.zeros(len(predictions)), 1: np.zeros(len(predictions))}
+    counts = {0: np.zeros(len(predictions)), 1: np.zeros(len(predictions))}
     for member_index in range(predictions.shape[1]):
         member_predictions = predictions[:, member_index].astype(int)
         member_probabilities = probabilities[:, member_index].astype(float)
-        for label in (-1, 0, 1):
+        for label in (0, 1):
             mask = member_predictions == label
             scores[label][mask] += member_probabilities[mask]
             counts[label][mask] += 1
-    averaged = np.vstack([scores[-1], scores[0], scores[1]]).T / np.maximum(
-        np.vstack([counts[-1], counts[0], counts[1]]).T,
+    averaged = np.vstack([scores[0], scores[1]]).T / np.maximum(
+        np.vstack([counts[0], counts[1]]).T,
         1.0,
     )
-    labels = np.asarray([-1, 0, 1], dtype=np.int8)
+    labels = np.asarray([0, 1], dtype=np.int8)
     chosen_indices = np.argmax(averaged, axis=1)
     return labels[chosen_indices], np.max(averaged, axis=1).astype(np.float32)
 
@@ -70,12 +70,12 @@ def build_ensemble_predictions(frame: pd.DataFrame, hyperparameters: dict[str, A
     if mechanism == "hard_majority":
         voted = hard_majority_vote(predictions)
         confidence = np.mean(predictions == voted[:, None], axis=1).astype(np.float32)
-        confidence[voted == 0] = 0.0
         return voted, confidence
     if mechanism == "soft_average":
         return soft_average_vote(predictions, probabilities)
     if mechanism == "unanimity":
         voted = unanimity_vote(predictions)
-        confidence = np.where(voted == 0, 0.0, np.min(probabilities, axis=1)).astype(np.float32)
+        agreement = np.all(predictions == voted[:, None], axis=1)
+        confidence = np.where(agreement, np.min(probabilities, axis=1), 0.0).astype(np.float32)
         return voted, confidence
     raise ValueError(f"Unsupported voting_mechanism: {mechanism}")

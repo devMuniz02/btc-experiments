@@ -18,6 +18,6 @@ hyperparameters:
 
 ## Voting Modes
 
-- `hard_majority`: modal class wins across `-1`, `0`, and `1`; exact ties return `0`.
+- `hard_majority`: modal class wins across `0 = sell` and `1 = buy`; exact ties return `0` (`sell`).
 - `soft_average`: probabilities are averaged by the class predicted by each member; the highest averaged class wins.
-- `unanimity`: returns `1` or `-1` only when all members agree on the same non-zero direction; otherwise returns `0`.
+- `unanimity`: returns the agreed `sell` or `buy` class only when all members agree; disagreements return confidence `0`.

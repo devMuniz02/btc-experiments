@@ -12,7 +12,7 @@
 ![Azure](https://img.shields.io/badge/Azure-Disabled%20Until%20Sync-0078D4?logo=microsoftazure&logoColor=white)
 ![CUDA](https://img.shields.io/badge/CUDA-Backtest%20Kernel-76B900?logo=nvidia&logoColor=white)
 
-Last updated: `2026-06-02T05:18:22.899310+00:00`
+Last updated: `2026-06-02T18:45:01.553627+00:00`
 
 Quant-Stream is a local, file-state BTC 1h research pipeline. YAML requests move through automation folders, models write local artifacts, and prediction columns accumulate in variation-level parquet result stores.
 
@@ -28,27 +28,31 @@ Supported active model families: `lstm`, `transformer`, `mamba`, `nn`, `rf`, `xg
 
 Supported training modes: `static_baseline`, `sliding_window_current_only`, `sliding_window_continue`, `sliding_window_retrain`, `reinforcement_ppo`, and `post_base`.
 
+## Backtest Contract
+
+`prediction` uses `0 = sell` and `1 = buy`. A trade is correct when `prediction == target`. Executed correct trades add `+stake`; executed incorrect trades subtract `stake`. BTC price movement does not change backtest reward.
+
 ## Run Counts
 
 | total | pending | done | rejected | deleted |
 | --- | --- | --- | --- | --- |
-| 0 | 0 | 0 | 0 | 0 |
+| 4 | 0 | 3 | 0 | 1 |
 
 ## Top Dev Model
 
-| model_id | model_type | variation_or_slot | status | latest_timestamp | prediction_count | signal_count | mean_probability | accuracy | win_rate | net_pnl | source |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| - | - | dev | - | - | - | - | - | - | - | - | - |
+| model_id | model_type | variation_or_slot | status | latest_timestamp | prediction_count | signal_count | mean_probability | accuracy | accuracy_q1 | accuracy_q2 | accuracy_q3 | win_rate | net_wins | net_wins_per_day | net_pnl | max_drawdown | source |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1be2527d3372a6b3e61c2e45 | lstm | var_1 | completed | 2026-05-04 22:00:00+00:00 | 5000 | 5000 | 0.940541 | 0.51 | 0.5096 | 0.5092 | 0.506133 | 0.51 | 100 | 0.478469 | 1718.46 | -0.796204 | dev_global_results |
 
 ## Production Slots
 
-| model_id | model_type | variation_or_slot | status | latest_timestamp | prediction_count | signal_count | mean_probability | accuracy | win_rate | net_pnl | source |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| - | - | model_slot_1 | - | - | - | - | - | - | - | - | - |
-| - | - | model_slot_2 | - | - | - | - | - | - | - | - | - |
-| - | - | model_slot_3 | - | - | - | - | - | - | - | - | - |
-| - | - | model_slot_4 | - | - | - | - | - | - | - | - | - |
-| - | - | model_slot_5 | - | - | - | - | - | - | - | - | - |
+| model_id | model_type | variation_or_slot | status | latest_timestamp | prediction_count | signal_count | mean_probability | accuracy | accuracy_q1 | accuracy_q2 | accuracy_q3 | win_rate | net_wins | net_wins_per_day | net_pnl | max_drawdown | source |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| - | - | model_slot_1 | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| - | - | model_slot_2 | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| - | - | model_slot_3 | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| - | - | model_slot_4 | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| - | - | model_slot_5 | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - |
 
 ## MLflow Sync
 

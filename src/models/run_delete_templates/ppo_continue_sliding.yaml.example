@@ -3,11 +3,31 @@ variation_id: 1
 train_mode: sliding_window_continue
 force_run: false
 hyperparameters:
+  seed: 42
+  train_length: 100000
+  test_length: 5000
   sequence_length: 24
+  action_dim: 2
   hidden_dim: 256
+  dropout: 0.1
+  eval_batch_size: 1024
+  reward_value: 1.0
   total_updates: 5
+  rollout_length: 2048
   ppo_epochs: 4
   minibatch_size: 256
   learning_rate: 0.0003
+  weight_decay: 0.0
+  clip_epsilon: 0.2
+  entropy_coef: 0.01
+  value_loss_coef: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  max_grad_norm: 1.0
+  window_hours: 1000
+  window_stride_hours: 1000
+  num_windows: 5
+  continue_from_previous: true
   previous_policy_kl_coef: 0.0
   device: auto
+  preload_to_device: false

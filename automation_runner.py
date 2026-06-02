@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from src.models.ensemble import build_ensemble_predictions
+from src.models.backtest import BacktestConfig, run_binary_backtest
 from src.models.training import train_model
 from automation.update_readme import update_readme
 from src.utils import (
@@ -180,6 +181,7 @@ def write_model_artifacts(
     payload: dict[str, Any],
     predictions: np.ndarray,
     probabilities: np.ndarray,
+    metrics: dict[str, Any] | None = None,
 ) -> None:
     model_dir = paths.variation_models_dir(variation_id) / model_id
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -196,7 +198,12 @@ def write_model_artifacts(
             "timestamp": utc_now_iso(),
             "model_id": model_id,
             "prediction_count": int(len(predictions)),
+            "signal_count": metrics.get("signal_count") if metrics else int(len(predictions)),
             "mean_probability": float(np.mean(probabilities)) if len(probabilities) else 0.0,
+            "accuracy": metrics.get("accuracy") if metrics else None,
+            "win_rate": metrics.get("win_rate") if metrics else None,
+            "net_pnl": metrics.get("net_pnl") if metrics else None,
+            "max_drawdown": metrics.get("max_drawdown") if metrics else None,
         },
         sort_keys=True,
     )
@@ -252,8 +259,18 @@ def process_run_request(paths: QuantStreamPaths, request_path: Path) -> RequestO
             )
             predictions = training_payload["predictions"]
             probabilities = training_payload["probabilities"]
+        if len(predictions) != len(test_frame) or len(probabilities) != len(test_frame):
+            raise ValueError(
+                f"Model returned {len(predictions)} predictions and {len(probabilities)} probabilities; "
+                f"expected {len(test_frame)} test rows."
+            )
         results[f"{model_id}_pred"] = predictions
         results[f"{model_id}_prob"] = probabilities
+        backtest = run_binary_backtest(
+            results,
+            model_id,
+            config=BacktestConfig(confidence_threshold=0.0, bet_fraction=0.02, use_cuda="cpu"),
+        )
         paths.global_results_path(variation_id).parent.mkdir(parents=True, exist_ok=True)
         results.to_parquet(paths.global_results_path(variation_id), index=False)
         enriched_payload = {
@@ -262,8 +279,18 @@ def process_run_request(paths: QuantStreamPaths, request_path: Path) -> RequestO
             "training_device": training_payload.get("device", ""),
             "scaler_path": training_payload.get("scaler_path", ""),
             "training_history": training_payload.get("history", []),
+            "resolved_train_length": training_payload.get("train_length", ""),
+            "resolved_test_length": training_payload.get("test_length", ""),
         }
-        write_model_artifacts(paths, variation_id, model_id, enriched_payload, predictions, probabilities)
+        write_model_artifacts(
+            paths,
+            variation_id,
+            model_id,
+            enriched_payload,
+            predictions,
+            probabilities,
+            metrics=backtest.metrics,
+        )
         done_payload = {**payload, "model_id": model_id, "status": "completed", "completed_at": utc_now_iso()}
         done_path = paths.runs_done_dir / f"{model_id}.yaml"
         write_yaml_file(done_path, done_payload)

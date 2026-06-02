@@ -3,9 +3,20 @@ variation_id: 1
 train_mode: static_baseline
 force_run: false
 hyperparameters:
+  seed: 42
+  train_length: 100000
+  test_length: 5000
   sequence_length: 24
   hidden_dim: 256
+  action_dim: 2
   epochs: 120
-  batch_size: 16
+  batch_size: 64
+  eval_batch_size: 1024
   learning_rate: 0.001
+  weight_decay: 0.0
+  dropout: 0.1
+  gradient_clip_norm: 0.0
+  early_stopping_patience: 0
+  validation_fraction: 0.0
   device: auto
+  preload_to_device: false

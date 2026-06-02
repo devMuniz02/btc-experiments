@@ -12,7 +12,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.utils import QuantStreamPaths, read_yaml_file, utc_now_iso
+from src.models.backtest import BacktestConfig, run_binary_backtest  # noqa: E402
+from src.utils import QuantStreamPaths, read_yaml_file, utc_now_iso  # noqa: E402
 
 PLACEHOLDER = "-"
 METRIC_COLUMNS = [
@@ -25,8 +26,14 @@ METRIC_COLUMNS = [
     "signal_count",
     "mean_probability",
     "accuracy",
+    "accuracy_q1",
+    "accuracy_q2",
+    "accuracy_q3",
     "win_rate",
+    "net_wins",
+    "net_wins_per_day",
     "net_pnl",
+    "max_drawdown",
     "source",
 ]
 BADGES = [
@@ -129,16 +136,29 @@ def dev_metrics_from_results(paths: QuantStreamPaths, variation: str, model_id: 
     prob_column = f"{model_id}_prob"
     results = pd.read_parquet(results_path)
     metrics: dict[str, str] = {}
-    if pred_column in results.columns:
-        predictions = results[pred_column]
-        metrics["prediction_count"] = str(int(predictions.notna().sum()))
-        metrics["signal_count"] = str(int((predictions.fillna(0) != 0).sum()))
-    if prob_column in results.columns:
-        metrics["mean_probability"] = fmt_number(results[prob_column].mean())
-    if pred_column in results.columns and "target" in results.columns:
-        comparable = results[[pred_column, "target"]].dropna()
-        if not comparable.empty:
-            metrics["accuracy"] = fmt_number((comparable[pred_column] == comparable["target"]).mean())
+    if pred_column in results.columns and prob_column in results.columns:
+        backtest = run_binary_backtest(
+            results,
+            model_id,
+            config=BacktestConfig(confidence_threshold=0.0, bet_fraction=0.02, use_cuda="cpu"),
+        )
+        for key in (
+            "prediction_count",
+            "signal_count",
+            "mean_probability",
+            "accuracy",
+            "accuracy_q1",
+            "accuracy_q2",
+            "accuracy_q3",
+            "win_rate",
+            "net_wins",
+            "net_wins_per_day",
+            "net_pnl",
+            "max_drawdown",
+            "latest_timestamp",
+        ):
+            if key in backtest.metrics:
+                metrics[key] = fmt_number(backtest.metrics[key])
     if metrics:
         metrics["source"] = "dev_global_results"
     return metrics
@@ -199,14 +219,24 @@ def prod_metrics_from_ledger(paths: QuantStreamPaths, slot: str) -> dict[str, st
     if "timestamp" in ledger.columns:
         metrics["latest_timestamp"] = str(pd.to_datetime(ledger["timestamp"], utc=True).max())
     if "prediction" in ledger.columns:
-        metrics["signal_count"] = str(int((ledger["prediction"].fillna(0) != 0).sum()))
+        metrics["signal_count"] = str(int(ledger["prediction"].notna().sum()))
     if "probability" in ledger.columns:
         metrics["mean_probability"] = fmt_number(ledger["probability"].mean())
     if "pnl" in ledger.columns:
         metrics["net_pnl"] = fmt_number(ledger["pnl"].sum())
+        equity = ledger["pnl"].cumsum().astype(float)
+        peak = equity.cummax()
+        drawdown = (equity - peak) / peak.where(peak != 0)
+        metrics["max_drawdown"] = fmt_number(drawdown.min())
     result_column = next((column for column in ("win", "is_win", "profitable") if column in ledger.columns), "")
     if result_column:
-        metrics["win_rate"] = fmt_number(ledger[result_column].astype(float).mean())
+        wins = ledger[result_column].astype(bool)
+        net_wins = int(wins.sum()) - int((~wins).sum())
+        metrics["win_rate"] = fmt_number(wins.astype(float).mean())
+        metrics["net_wins"] = str(net_wins)
+        if "timestamp" in ledger.columns:
+            trade_dates = pd.to_datetime(ledger["timestamp"], utc=True, errors="coerce").dt.date.dropna()
+            metrics["net_wins_per_day"] = fmt_number(net_wins / max(1, int(trade_dates.nunique())))
     return metrics
 
 
@@ -276,40 +306,47 @@ def render_readme(paths: QuantStreamPaths) -> str:
         }
     ]
     mlflow_rows = [{"status": mlflow_status, "public_url": mlflow_url, "note": mlflow_note}]
-    return "\n\n".join(
-        [
-            "# Quant-Stream",
-            "\n".join(BADGES),
-            f"Last updated: `{utc_now_iso()}`",
-            "Quant-Stream is a local, file-state BTC 1h research pipeline. YAML requests move through automation "
-            "folders, models write local artifacts, and prediction columns accumulate in variation-level parquet "
-            "result stores.",
-            "## Workflow",
-            "- Generate `var_1` with "
-            "`powershell -ExecutionPolicy Bypass -File .\\automation\\generate_var_1_dataset.ps1`.\n"
-            "- Add run YAML files to `automation/run_requests/`.\n"
-            "- Add delete YAML files to `automation/delete_requests/`.\n"
-            "- Run `python automation_runner.py --once` or use the local Windows watcher.\n"
-            "- Run `python state_sync.py --check` to verify model folders, result columns, scalers, and sync "
-            "buffers.\n\n"
-            "Supported active model families: `lstm`, `transformer`, `mamba`, `nn`, `rf`, `xgboost`, `bc`, "
-            "`dagger`, `ppo`, `ppo_continue`, `actor_critic`, `mamba_post_base`, and `ensemble`.\n\n"
-            "Supported training modes: `static_baseline`, `sliding_window_current_only`, `sliding_window_continue`, "
-            "`sliding_window_retrain`, `reinforcement_ppo`, and `post_base`.",
-            "## Run Counts",
-            render_table(run_rows, ["total", "pending", "done", "rejected", "deleted"]),
-            "## Top Dev Model",
-            render_table([dev_row], METRIC_COLUMNS),
-            "## Production Slots",
-            render_table(prod_rows, METRIC_COLUMNS),
-            "## MLflow Sync",
-            render_table(mlflow_rows, ["status", "public_url", "note"]),
-            "## Local Automation",
-            "- `automation/*.ps1` scripts are local-only and ignored by Git.\n"
-            "- GitHub Actions run code quality only.\n"
-            "- Local request execution stays on this machine until MLflow sync is explicitly enabled.",
-        ]
-    ) + "\n"
+    return (
+        "\n\n".join(
+            [
+                "# Quant-Stream",
+                "\n".join(BADGES),
+                f"Last updated: `{utc_now_iso()}`",
+                "Quant-Stream is a local, file-state BTC 1h research pipeline. YAML requests move through automation "
+                "folders, models write local artifacts, and prediction columns accumulate in variation-level parquet "
+                "result stores.",
+                "## Workflow",
+                "- Generate `var_1` with "
+                "`powershell -ExecutionPolicy Bypass -File .\\automation\\generate_var_1_dataset.ps1`.\n"
+                "- Add run YAML files to `automation/run_requests/`.\n"
+                "- Add delete YAML files to `automation/delete_requests/`.\n"
+                "- Run `python automation_runner.py --once` or use the local Windows watcher.\n"
+                "- Run `python state_sync.py --check` to verify model folders, result columns, scalers, and sync "
+                "buffers.\n\n"
+                "Supported active model families: `lstm`, `transformer`, `mamba`, `nn`, `rf`, `xgboost`, `bc`, "
+                "`dagger`, `ppo`, `ppo_continue`, `actor_critic`, `mamba_post_base`, and `ensemble`.\n\n"
+                "Supported training modes: `static_baseline`, `sliding_window_current_only`, "
+                "`sliding_window_continue`, `sliding_window_retrain`, `reinforcement_ppo`, and `post_base`.",
+                "## Backtest Contract",
+                "`prediction` uses `0 = sell` and `1 = buy`. A trade is correct when `prediction == target`. "
+                "Executed correct trades add `+stake`; executed incorrect trades subtract `stake`. BTC price movement "
+                "does not change backtest reward.",
+                "## Run Counts",
+                render_table(run_rows, ["total", "pending", "done", "rejected", "deleted"]),
+                "## Top Dev Model",
+                render_table([dev_row], METRIC_COLUMNS),
+                "## Production Slots",
+                render_table(prod_rows, METRIC_COLUMNS),
+                "## MLflow Sync",
+                render_table(mlflow_rows, ["status", "public_url", "note"]),
+                "## Local Automation",
+                "- `automation/*.ps1` scripts are local-only and ignored by Git.\n"
+                "- GitHub Actions run code quality only.\n"
+                "- Local request execution stays on this machine until MLflow sync is explicitly enabled.",
+            ]
+        )
+        + "\n"
+    )
 
 
 def update_readme(root: Path | None = None) -> Path:

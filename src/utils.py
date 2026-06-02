@@ -26,7 +26,6 @@ BACKFILL_EXTRA_ROWS = 1000
 EXCHANGE_PAGE_LIMIT = 1000
 SYMBOL = "BTC/USDT"
 TIMEFRAME = "1h"
-LEGACY_VAR_1_CSV = PROJECT_ROOT / "legacy_unused" / "data" / "btc" / "btc_100k_train_5k_test_candles.csv"
 TIMEFRAME_MS = 60 * 60 * 1000
 HISTORICAL_BACKFILL_CANDIDATES: list[tuple[str, str]] = [
     ("bitstamp", "BTC/USD"),
@@ -517,11 +516,12 @@ def ingest_variation(
     ensure_quant_stream_layout(paths)
     test_start, padded_start, end = requested_bounds(test_start_date)
     resolved_source = str(source or "auto").strip().lower()
-    legacy_source_path = source_path or LEGACY_VAR_1_CSV
     if resolved_source not in {"auto", "exchange", "legacy"}:
         raise ValueError("source must be one of: auto, exchange, legacy.")
     if resolved_source == "legacy":
-        clean = load_legacy_var_1_matrix(source_path=legacy_source_path, test_start=test_start)
+        if source_path is None:
+            raise ValueError("source_path is required when source=legacy.")
+        clean = load_legacy_var_1_matrix(source_path=source_path, test_start=test_start)
     else:
         raw = fetch_ohlcv_range_with_backfill(
             start=padded_start,

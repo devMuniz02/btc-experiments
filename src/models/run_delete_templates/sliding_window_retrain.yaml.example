@@ -3,12 +3,24 @@ variation_id: 1
 train_mode: sliding_window_retrain
 force_run: false
 hyperparameters:
+  seed: 42
+  train_length: 100000
+  test_length: 5000
   sequence_length: 24
+  action_dim: 2
   hidden_dim: 192
   num_layers: 3
   epochs: 20
   batch_size: 128
+  eval_batch_size: 1024
   learning_rate: 0.001
+  weight_decay: 0.0
+  dropout: 0.1
+  gradient_clip_norm: 0.0
   window_hours: 1000
+  window_stride_hours: 1000
   num_windows: 4
+  reset_weights_each_window: true
+  reset_optimizer_each_window: true
   device: auto
+  preload_to_device: true

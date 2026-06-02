@@ -79,10 +79,17 @@ class DirectionDatasetBundle:
 
 
 class BTCDirectionEnv:
-    def __init__(self, dataset_bundle: DirectionDatasetBundle, split_name: str, action_dim: int = 2) -> None:
+    def __init__(
+        self,
+        dataset_bundle: DirectionDatasetBundle,
+        split_name: str,
+        action_dim: int = 2,
+        reward_value: float = 1.0,
+    ) -> None:
         self.dataset_bundle = dataset_bundle
         self.split_name = split_name
         self.action_dim = int(action_dim)
+        self.reward_value = float(reward_value)
         self.decision_indices = (
             dataset_bundle.train_decision_indices if split_name == "train" else dataset_bundle.test_decision_indices
         )
@@ -101,7 +108,7 @@ class BTCDirectionEnv:
         if self.action_dim == 3 and action_int == NONE_ACTION:
             reward = 0.0
         else:
-            reward = 1.0 if action_int == label else -1.0
+            reward = self.reward_value if action_int == label else -self.reward_value
         self._cursor += 1
         done = self._cursor >= len(self.decision_indices)
         if done:
@@ -149,9 +156,21 @@ def build_dataset_bundle(
     missing = [column for column in ["timestamp", "target", *MODEL_FEATURE_COLUMNS] if column not in frame.columns]
     if missing:
         raise ValueError(f"Clean dataset is missing required model columns: {missing}")
-    if len(frame) < train_rows + test_rows:
-        raise ValueError(f"Expected at least {train_rows + test_rows} rows, found {len(frame)}.")
-    working = frame.iloc[: train_rows + test_rows].reset_index(drop=True).copy()
+    if train_rows < sequence_length:
+        raise ValueError(f"train_length must be at least sequence_length ({sequence_length}), found {train_rows}.")
+    if test_rows <= 0:
+        raise ValueError("test_length must be positive.")
+    if train_rows > TRAIN_CANDLES:
+        raise ValueError(f"train_length cannot exceed the canonical {TRAIN_CANDLES} training rows.")
+    if len(frame) < TRAIN_CANDLES + test_rows:
+        raise ValueError(f"Expected at least {TRAIN_CANDLES + test_rows} rows, found {len(frame)}.")
+    train_start = TRAIN_CANDLES - int(train_rows)
+    train_end = TRAIN_CANDLES
+    test_end = TRAIN_CANDLES + int(test_rows)
+    working = pd.concat(
+        [frame.iloc[train_start:train_end], frame.iloc[TRAIN_CANDLES:test_end]],
+        ignore_index=True,
+    ).copy()
     scaler = StandardScaler().fit(working.iloc[:train_rows][MODEL_FEATURE_COLUMNS].to_numpy(dtype=np.float32))
     scaled_features = scaler.transform(working[MODEL_FEATURE_COLUMNS].to_numpy(dtype=np.float32)).astype(np.float32)
     labels = working["target"].to_numpy(dtype=np.int64)
@@ -194,11 +213,26 @@ class SequenceBackbone(nn.Module):
 
 
 class LSTMClassificationPolicy(nn.Module):
-    def __init__(self, sequence_length: int, feature_dim: int, action_dim: int = 2, hidden_dim: int = 128) -> None:
+    def __init__(
+        self,
+        sequence_length: int,
+        feature_dim: int,
+        action_dim: int = 2,
+        hidden_dim: int = 128,
+        num_layers: int = 2,
+        dropout: float = 0.1,
+    ) -> None:
         require_torch()
         super().__init__()
         self.input_proj = nn.Linear(feature_dim, hidden_dim)
-        self.lstm = nn.LSTM(hidden_dim, hidden_dim, num_layers=2, batch_first=True, dropout=0.1)
+        recurrent_dropout = float(dropout) if int(num_layers) > 1 else 0.0
+        self.lstm = nn.LSTM(
+            hidden_dim,
+            hidden_dim,
+            num_layers=int(num_layers),
+            batch_first=True,
+            dropout=recurrent_dropout,
+        )
         self.norm = nn.LayerNorm(hidden_dim)
         self.head = nn.Linear(hidden_dim, action_dim)
 
@@ -209,20 +243,30 @@ class LSTMClassificationPolicy(nn.Module):
 
 
 class TransformerClassificationPolicy(nn.Module):
-    def __init__(self, sequence_length: int, feature_dim: int, action_dim: int = 2, hidden_dim: int = 128) -> None:
+    def __init__(
+        self,
+        sequence_length: int,
+        feature_dim: int,
+        action_dim: int = 2,
+        hidden_dim: int = 128,
+        num_layers: int = 2,
+        num_heads: int = 4,
+        feedforward_dim: int | None = None,
+        dropout: float = 0.1,
+    ) -> None:
         require_torch()
         super().__init__()
         self.input_proj = nn.Linear(feature_dim, hidden_dim)
         self.position_embedding = nn.Parameter(torch.zeros(1, sequence_length, hidden_dim))
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=hidden_dim,
-            nhead=4,
-            dim_feedforward=hidden_dim * 4,
-            dropout=0.1,
+            nhead=int(num_heads),
+            dim_feedforward=int(feedforward_dim or hidden_dim * 4),
+            dropout=float(dropout),
             activation="gelu",
             batch_first=True,
         )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=2)
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=int(num_layers))
         self.norm = nn.LayerNorm(hidden_dim)
         self.head = nn.Linear(hidden_dim, action_dim)
 
@@ -302,10 +346,17 @@ class MambaClassificationPolicy(nn.Module):
 
 
 class ClassificationPolicy(nn.Module):
-    def __init__(self, sequence_length: int, feature_dim: int, action_dim: int = 2, hidden_dim: int = 256) -> None:
+    def __init__(
+        self,
+        sequence_length: int,
+        feature_dim: int,
+        action_dim: int = 2,
+        hidden_dim: int = 256,
+        dropout: float = 0.1,
+    ) -> None:
         require_torch()
         super().__init__()
-        self.backbone = SequenceBackbone(sequence_length, feature_dim, hidden_dim=hidden_dim)
+        self.backbone = SequenceBackbone(sequence_length, feature_dim, hidden_dim=hidden_dim, dropout=dropout)
         self.policy_head = nn.Linear(hidden_dim, action_dim)
 
     def forward(self, observations):
@@ -313,10 +364,17 @@ class ClassificationPolicy(nn.Module):
 
 
 class ActorCriticPolicy(nn.Module):
-    def __init__(self, sequence_length: int, feature_dim: int, action_dim: int = 2, hidden_dim: int = 256) -> None:
+    def __init__(
+        self,
+        sequence_length: int,
+        feature_dim: int,
+        action_dim: int = 2,
+        hidden_dim: int = 256,
+        dropout: float = 0.1,
+    ) -> None:
         require_torch()
         super().__init__()
-        self.backbone = SequenceBackbone(sequence_length, feature_dim, hidden_dim=hidden_dim)
+        self.backbone = SequenceBackbone(sequence_length, feature_dim, hidden_dim=hidden_dim, dropout=dropout)
         self.policy_head = nn.Linear(hidden_dim, action_dim)
         self.value_head = nn.Linear(hidden_dim, 1)
 
@@ -380,6 +438,8 @@ def build_torch_policy(
             bundle.feature_dim,
             action_dim=action_dim,
             hidden_dim=hidden_dim,
+            num_layers=int(hyperparameters.get("num_layers", 2)),
+            dropout=float(hyperparameters.get("dropout", 0.1)),
         )
     if model_type == "transformer":
         return TransformerClassificationPolicy(
@@ -387,6 +447,10 @@ def build_torch_policy(
             bundle.feature_dim,
             action_dim=action_dim,
             hidden_dim=hidden_dim,
+            num_layers=int(hyperparameters.get("num_layers", 2)),
+            num_heads=int(hyperparameters.get("num_heads", 4)),
+            feedforward_dim=int(hyperparameters.get("feedforward_dim", hidden_dim * 4)),
+            dropout=float(hyperparameters.get("dropout", 0.1)),
         )
     if model_type == "mamba":
         return MambaClassificationPolicy(
@@ -403,6 +467,7 @@ def build_torch_policy(
             bundle.feature_dim,
             action_dim=action_dim,
             hidden_dim=hidden_dim,
+            dropout=float(hyperparameters.get("dropout", 0.1)),
         )
     if model_type in {"ppo", "ppo_continue", "actor_critic"}:
         return ActorCriticPolicy(
@@ -410,6 +475,7 @@ def build_torch_policy(
             bundle.feature_dim,
             action_dim=action_dim,
             hidden_dim=hidden_dim,
+            dropout=float(hyperparameters.get("dropout", 0.1)),
         )
     if model_type == "mamba_post_base":
         return MambaContinuationActorCriticPolicy(
@@ -437,11 +503,13 @@ def train_torch_classifier(
     learning_rate: float,
     batch_size: int,
     preload_to_device: bool = False,
+    weight_decay: float = 0.0,
+    gradient_clip_norm: float = 0.0,
 ) -> list[dict[str, Any]]:
     require_torch()
     observations, labels, _ = bundle.get_split_data("train")
     policy.to(device)
-    optimizer = torch.optim.Adam(policy.parameters(), lr=float(learning_rate))
+    optimizer = torch.optim.Adam(policy.parameters(), lr=float(learning_rate), weight_decay=float(weight_decay))
     criterion = nn.CrossEntropyLoss()
     history: list[dict[str, Any]] = []
     pin_memory = device.type == "cuda"
@@ -486,6 +554,9 @@ def train_torch_classifier(
                     logits = logits[0]
                 loss = criterion(logits, batch_labels)
             scaler.scale(loss).backward()
+            if gradient_clip_norm > 0:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(policy.parameters(), max_norm=float(gradient_clip_norm))
             scaler.step(optimizer)
             scaler.update()
             total_loss += float(loss.item()) * int(batch_labels.size(0))
@@ -510,7 +581,12 @@ def train_dagger(
     rounds = int(hyperparameters.get("rounds", 4))
     fit_epochs = int(hyperparameters.get("fit_epochs_per_round", 2))
     history: list[dict[str, Any]] = []
-    env = BTCDirectionEnv(bundle, "train")
+    env = BTCDirectionEnv(
+        bundle,
+        "train",
+        action_dim=int(hyperparameters.get("action_dim", 2)),
+        reward_value=float(hyperparameters.get("reward_value", 1.0)),
+    )
     for round_index in range(1, rounds + 1):
         rollout_observations: list[np.ndarray] = []
         expert_actions: list[int] = []
@@ -537,7 +613,11 @@ def train_dagger(
             shuffle=True,
             pin_memory=device.type == "cuda",
         )
-        optimizer = torch.optim.Adam(policy.parameters(), lr=float(hyperparameters.get("learning_rate", 1e-3)))
+        optimizer = torch.optim.Adam(
+            policy.parameters(),
+            lr=float(hyperparameters.get("learning_rate", 1e-3)),
+            weight_decay=float(hyperparameters.get("weight_decay", 0.0)),
+        )
         criterion = nn.CrossEntropyLoss()
         final_loss = 0.0
         final_accuracy = 0.0
@@ -552,6 +632,9 @@ def train_dagger(
                 loss = criterion(logits, batch_labels)
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
+                gradient_clip_norm = float(hyperparameters.get("gradient_clip_norm", 0.0))
+                if gradient_clip_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(policy.parameters(), max_norm=gradient_clip_norm)
                 optimizer.step()
                 total_loss += float(loss.item()) * int(batch_labels.size(0))
                 correct += int((torch.argmax(logits, dim=-1) == batch_labels).sum().item())
@@ -576,6 +659,7 @@ def ppo_update(
     clip_epsilon: float,
     entropy_coef: float,
     value_loss_coef: float,
+    max_grad_norm: float,
 ) -> dict[str, float]:
     sample_count = int(observations.shape[0])
     total_loss = 0.0
@@ -597,7 +681,8 @@ def ppo_update(
             loss = policy_loss + (value_loss_coef * value_loss) - (entropy_coef * entropy)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(policy.parameters(), max_norm=1.0)
+            if max_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(policy.parameters(), max_norm=float(max_grad_norm))
             optimizer.step()
             total_loss += float(loss.item())
             updates += 1
@@ -616,13 +701,19 @@ def train_actor_critic_or_ppo(
     obs = torch.tensor(observations, dtype=torch.float32, device=device)
     label_tensor = torch.tensor(labels, dtype=torch.long, device=device)
     policy.to(device)
-    optimizer = torch.optim.Adam(policy.parameters(), lr=float(hyperparameters.get("learning_rate", 3e-4)))
+    optimizer = torch.optim.Adam(
+        policy.parameters(),
+        lr=float(hyperparameters.get("learning_rate", 3e-4)),
+        weight_decay=float(hyperparameters.get("weight_decay", 0.0)),
+    )
     total_updates = int(hyperparameters.get("total_updates", 5))
     ppo_epochs = int(hyperparameters.get("ppo_epochs", 4))
     minibatch_size = int(hyperparameters.get("minibatch_size", 256))
     clip_epsilon = float(hyperparameters.get("clip_epsilon", 0.2))
     entropy_coef = float(hyperparameters.get("entropy_coef", 0.01))
     value_loss_coef = float(hyperparameters.get("value_loss_coef", 0.5))
+    max_grad_norm = float(hyperparameters.get("max_grad_norm", 1.0))
+    reward_value = float(hyperparameters.get("reward_value", 1.0))
     history: list[dict[str, Any]] = []
     for update in range(1, total_updates + 1):
         policy.eval()
@@ -631,7 +722,8 @@ def train_actor_critic_or_ppo(
             dist = Categorical(logits=logits)
             actions = dist.sample()
             old_log_probs = dist.log_prob(actions)
-            rewards = torch.where(actions == label_tensor, torch.ones_like(values), -torch.ones_like(values))
+            reward_scale = torch.full_like(values, reward_value)
+            rewards = torch.where(actions == label_tensor, reward_scale, -reward_scale)
             advantages = rewards - values
             advantages = (advantages - advantages.mean()) / advantages.std().clamp_min(1e-6)
         metrics = ppo_update(
@@ -647,6 +739,7 @@ def train_actor_critic_or_ppo(
             clip_epsilon=clip_epsilon,
             entropy_coef=entropy_coef,
             value_loss_coef=value_loss_coef,
+            max_grad_norm=max_grad_norm,
         )
         with torch.no_grad():
             eval_logits, _ = policy(obs)
@@ -701,6 +794,10 @@ def train_sklearn_model(
             n_estimators=int(hyperparameters.get("n_estimators", 300)),
             max_depth=int(hyperparameters.get("max_depth", 10)),
             min_samples_leaf=int(hyperparameters.get("min_samples_leaf", 5)),
+            min_samples_split=int(hyperparameters.get("min_samples_split", 2)),
+            max_features=hyperparameters.get("max_features", "sqrt"),
+            class_weight=hyperparameters.get("class_weight", None),
+            bootstrap=bool(hyperparameters.get("bootstrap", True)),
             random_state=int(hyperparameters.get("seed", 42)),
             n_jobs=int(hyperparameters.get("n_jobs", -1)),
         )
@@ -713,8 +810,11 @@ def train_sklearn_model(
             learning_rate=float(hyperparameters.get("learning_rate", 0.03)),
             subsample=float(hyperparameters.get("subsample", 0.9)),
             colsample_bytree=float(hyperparameters.get("colsample_bytree", 0.9)),
-            objective="binary:logistic",
-            eval_metric="logloss",
+            min_child_weight=float(hyperparameters.get("min_child_weight", 1.0)),
+            reg_alpha=float(hyperparameters.get("reg_alpha", 0.0)),
+            reg_lambda=float(hyperparameters.get("reg_lambda", 1.0)),
+            objective=str(hyperparameters.get("objective", "binary:logistic")),
+            eval_metric=str(hyperparameters.get("eval_metric", "logloss")),
             tree_method=str(hyperparameters.get("tree_method", "hist")),
             n_jobs=int(hyperparameters.get("n_jobs", -1)),
             random_state=int(hyperparameters.get("seed", 42)),
@@ -755,7 +855,14 @@ def train_model(
     seed = int(hyperparameters.get("seed", 42))
     set_seed(seed)
     sequence_length = int(hyperparameters.get("sequence_length", SEQUENCE_LENGTH))
-    bundle = build_dataset_bundle(clean_frame, sequence_length=sequence_length)
+    train_rows = int(hyperparameters.get("train_length", TRAIN_CANDLES))
+    test_rows = int(hyperparameters.get("test_length", TEST_CANDLES))
+    bundle = build_dataset_bundle(
+        clean_frame,
+        sequence_length=sequence_length,
+        train_rows=train_rows,
+        test_rows=test_rows,
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     scaler_path = output_dir / "scaler.pkl"
     try:
@@ -780,11 +887,13 @@ def train_model(
             "history": history,
             "scaler_path": str(output_dir / "scaler.pkl"),
             "backend": "sklearn",
+            "train_length": bundle.train_row_count,
+            "test_length": bundle.test_row_count,
         }
 
     require_torch()
     device = resolve_device(str(hyperparameters.get("device", "auto")))
-    action_dim = 3 if model_key in {"mamba_post_base"} else 2
+    action_dim = int(hyperparameters.get("action_dim", 3 if model_key in {"mamba_post_base"} else 2))
     policy = build_torch_policy(model_key, bundle, hyperparameters, action_dim=action_dim).to(device)
     if model_key == "dagger":
         history = train_dagger(policy, bundle, device=device, hyperparameters=hyperparameters)
@@ -816,6 +925,8 @@ def train_model(
                     learning_rate=float(hyperparameters.get("learning_rate", 1e-3)),
                     batch_size=attempt_batch_size,
                     preload_to_device=bool(hyperparameters.get("preload_to_device", model_key == "mamba")),
+                    weight_decay=float(hyperparameters.get("weight_decay", 0.0)),
+                    gradient_clip_norm=float(hyperparameters.get("gradient_clip_norm", 0.0)),
                 )
                 break
             except RuntimeError as exc:
@@ -852,4 +963,6 @@ def train_model(
         "scaler_path": str(output_dir / "scaler.pkl"),
         "backend": "torch",
         "device": str(device),
+        "train_length": bundle.train_row_count,
+        "test_length": bundle.test_row_count,
     }
