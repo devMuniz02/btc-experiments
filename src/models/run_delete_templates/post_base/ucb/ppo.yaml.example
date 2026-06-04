@@ -1,0 +1,39 @@
+﻿model_type: actor_critic # lstm | transformer | mamba | nn | logistic_regression | rf | xgboost | bc | dagger | ppo | actor_critic
+variation_id: 1 # >= 1; canonical var_1 = 1
+train_mode: post_base # static_baseline | sliding_window_current_only | sliding_window_continue | sliding_window_retrain | post_base
+force_run: false # true | false; true bypasses duplicate/tombstone blocking
+hyperparameters:
+  seed: 42 # >= 0 integer
+  train_length: 100000 # >= 1 integer; canonical 100000
+  test_length: 5000 # >= 1 integer; canonical 5000
+  sequence_length: 24 # >= 1 integer; legacy default 24
+  action_dim: 2 # 2 for binary sell/buy; 0=sell, 1=buy
+  base_model_family: ppo # lstm | transformer | mamba | nn | logistic_regression | rf | xgboost | bc | dagger | ppo
+  base_model_id: replace_with_base_model_id # existing completed base model id
+  post_base_variant: ucb # actor_critic | ppo | ucb | bandit | thompson
+  hidden_dim: 256 # >= 1 integer
+  num_layers: 2 # >= 1 integer
+  dropout: 0.1 # [0.0, 1.0] float
+  eval_batch_size: 1024 # >= 1 integer
+  reward_value: 1.0 # > 0 float; correct +value, incorrect -value
+  bet_semantics: immediate_correct_plus_stake_incorrect_minus_stake # descriptive; immediate correct +stake / incorrect -stake
+  total_updates: 5 # >= 1 integer
+  rollout_length: 2048 # >= 1 integer
+  ppo_epochs: 4 # >= 1 integer
+  minibatch_size: 256 # >= 1 integer
+  learning_rate: 0.0003 # > 0 float
+  weight_decay: 0.0 # >= 0 float
+  clip_epsilon: 0.2 # > 0 float; default 0.2
+  entropy_coef: 0.01 # >= 0 float; 0 disables
+  value_loss_coef: 0.5 # >= 0 float
+  gamma: 0.99 # [0.0, 1.0] float
+  gae_lambda: 0.95 # [0.0, 1.0] float
+  max_grad_norm: 1.0 # >= 0 float; 0 disables
+  window_hours: 1000 # >= 1 integer
+  window_stride_hours: 1000 # >= 1 integer
+  num_windows: 5 # >= 1 integer
+  window_start_index: 0 # >= 0 integer
+  continue_from_previous: false # true | false
+  device: auto # auto | cuda | cpu
+  preload_to_device: false # true | false
+

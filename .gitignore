@@ -30,8 +30,16 @@ scalers/**/*.pkl
 
 # Local automation runtime state
 automation/*.ps1
+automation/optimization/*.db
+automation/optimization/*.sqlite
+automation/optimization/*.sqlite3
+automation/optimization/*_top5.yaml
+automation/optimization/*_family_selection.yaml
+automation/optimization/search_config.yaml
+automation/optimization/*.example
 automation/run_requests/*.yaml
 automation/run_requests/*.yml
+automation/run_requests/*.example
 automation/runs_done/*.yaml
 automation/runs_done/*.yml
 automation/delete_requests/*.yaml
@@ -42,6 +50,8 @@ automation/rejected_runs/*.yaml
 automation/rejected_runs/*.yml
 !automation/**/.gitkeep
 !automation/**/*.example
+automation/optimization/*.example
+automation/run_requests/*.example
 !automation/config.yaml
 
 # Local logs

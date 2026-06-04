@@ -1,0 +1,18 @@
+﻿model_type: ensemble # lstm | transformer | mamba | nn | logistic_regression | rf | xgboost | bc | dagger | ppo | ensemble | actor_critic
+variation_id: 1 # >= 1; canonical var_1 = 1
+train_mode: static_baseline # static_baseline | sliding_window_current_only | sliding_window_continue | sliding_window_retrain | post_base
+force_run: false # true | false; true bypasses duplicate/tombstone blocking
+hyperparameters:
+  seed: 42 # >= 0 integer
+  train_length: 100000 # >= 1 integer; canonical 100000
+  test_length: 5000 # >= 1 integer; canonical 5000
+  ensemble_mode: stacked_logistic # stacked_logistic
+  stack_c: 1.0 # > 0 float; logistic regression inverse regularization
+  stack_max_iter: 1000 # >= 1 integer
+  stack_solver: lbfgs # lbfgs | liblinear | saga
+  eval_batch_size: 1024 # >= 1 integer
+  device: auto # auto | cuda | cpu; used when loading Torch base models
+  models_pool: # list of completed model ids; 2+ recommended
+    - replace_with_trained_model_id_1
+    - replace_with_trained_model_id_2
+

@@ -176,7 +176,7 @@ def run_binary_backtest(
     else:
         target = np.zeros(len(results), dtype=np.int8)
     valid_prediction = pd.Series(results[pred_column]).notna().to_numpy(dtype=bool)
-    valid_probability = pd.Series(results[prob_column]).notna().to_numpy(dtype=bool)
+    valid_probability = (pd.Series(results[prob_column]).notna().to_numpy(dtype=bool)) & (probabilities > 0.0)
     trade_mask = (
         valid_prediction
         & valid_probability
@@ -238,8 +238,14 @@ def run_binary_backtest(
 def summarize_backtest(results: pd.DataFrame, trades: pd.DataFrame, *, model_id: str) -> dict[str, Any]:
     pred_column = f"{model_id}_pred"
     prob_column = f"{model_id}_prob"
-    prediction_count = int(results[pred_column].notna().sum()) if pred_column in results.columns else 0
-    probability_series = results[prob_column].dropna() if prob_column in results.columns else pd.Series(dtype=float)
+    if pred_column in results.columns and prob_column in results.columns:
+        valid_probability = pd.to_numeric(results[prob_column], errors="coerce")
+        valid_rows = results[pred_column].notna() & valid_probability.notna() & (valid_probability > 0.0)
+        prediction_count = int(valid_rows.sum())
+        probability_series = valid_probability.loc[valid_rows]
+    else:
+        prediction_count = 0
+        probability_series = pd.Series(dtype=float)
     signal_count = int(trades["executed"].sum()) if "executed" in trades.columns else 0
     metrics: dict[str, Any] = {
         "model_id": model_id,

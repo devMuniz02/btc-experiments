@@ -1,0 +1,22 @@
+﻿model_type: rf # lstm | transformer | mamba | nn | logistic_regression | rf | xgboost | bc | dagger | ppo | actor_critic
+variation_id: 1 # >= 1; canonical var_1 = 1
+train_mode: static_baseline # static_baseline | sliding_window_current_only | sliding_window_continue | sliding_window_retrain | post_base
+force_run: false # true | false; true bypasses duplicate/tombstone blocking
+hyperparameters:
+  seed: 42 # >= 0 integer
+  train_length: 100000 # >= 1 integer; canonical 100000
+  test_length: 5000 # >= 1 integer; canonical 5000
+  sequence_length: 24 # >= 1 integer; legacy default 24
+  action_dim: 2 # 2 for binary sell/buy; 0=sell, 1=buy
+  n_estimators: 300 # >= 1 integer
+  max_depth: 10 # >= 1 integer
+  min_samples_leaf: 5 # >= 1 integer
+  min_samples_split: 2 # >= 2 integer
+  max_features: sqrt # sqrt | log2 | null | int | float in (0,1]
+  class_weight: null # null | balanced | balanced_subsample | mapping
+  bootstrap: true # true | false
+  n_jobs: -1 # -1 all cores | positive worker count
+  device: auto # auto | cuda | cpu; auto tries CUDA/cuML then CPU
+  n_streams: 4 # >= 1 integer; cuML CUDA random forest streams
+
+

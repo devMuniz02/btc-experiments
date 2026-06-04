@@ -17,6 +17,19 @@ function Assert-Command {
     }
 }
 
+function Invoke-OptionalCommand {
+    param(
+        [string]$Description,
+        [scriptblock]$Command
+    )
+
+    Write-Host $Description
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "$Description failed or is unavailable on this platform. Setup will continue with CPU fallback where needed."
+    }
+}
+
 Assert-Command -Name "conda"
 
 $CondaEnvs = conda env list
@@ -50,6 +63,7 @@ conda install -n $EnvName -c conda-forge `
     pyyaml `
     streamlit `
     plotly `
+    optuna `
     scikit-learn `
     xgboost `
     joblib `
@@ -66,6 +80,15 @@ $env:PIP_REQUIRE_VIRTUALENV = "false"
 conda run -n $EnvName python -m pip --isolated install --upgrade pip
 conda run -n $EnvName python -m pip --isolated install torch torchvision --index-url https://download.pytorch.org/whl/cu132
 conda run -n $EnvName python -m pip --isolated install ccxt
+Invoke-OptionalCommand -Description "Installing optional CuPy CUDA dependencies..." -Command {
+    conda run -n $EnvName python -m pip --isolated install cupy-cuda12x
+}
+Invoke-OptionalCommand -Description "Installing optional RAPIDS cuML CUDA dependencies..." -Command {
+    conda install -n $EnvName -c rapidsai -c conda-forge -c nvidia `
+        cuml `
+        cuda-version=12.0 `
+        -y
+}
 if ($null -eq $PreviousPipRequireVirtualenv) {
     Remove-Item Env:\PIP_REQUIRE_VIRTUALENV -ErrorAction SilentlyContinue
 }

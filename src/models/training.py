@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import random
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,17 @@ from torch.utils.data import DataLoader, TensorDataset
 MODEL_FEATURE_COLUMNS = [*FEATURE_COLUMNS, *TEMPORAL_FEATURE_COLUMNS]
 SEQUENCE_LENGTH = 24
 NONE_ACTION = 2
+
+
+def release_torch_memory() -> None:
+    gc.collect()
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+    except Exception:
+        pass
 
 
 class LocalStandardScaler:
@@ -780,16 +792,85 @@ def evaluate_torch_policy(
     return np.concatenate(predictions), np.concatenate(probabilities)
 
 
+def array_to_numpy(values: Any) -> np.ndarray:
+    if hasattr(values, "to_numpy"):
+        return np.asarray(values.to_numpy())
+    if hasattr(values, "get"):
+        return np.asarray(values.get())
+    return np.asarray(values)
+
+
+def cuda_requested_or_auto(hyperparameters: dict[str, Any]) -> bool:
+    device = str(hyperparameters.get("device", "auto")).strip().lower()
+    if device == "cpu":
+        return False
+    if device == "cuda":
+        return True
+    return bool(torch.cuda.is_available())
+
+
 def train_sklearn_model(
     model_type: str,
     bundle: DirectionDatasetBundle,
     hyperparameters: dict[str, Any],
-) -> tuple[Any, list[dict[str, Any]]]:
+) -> tuple[Any, list[dict[str, Any]], str]:
     from sklearn.ensemble import RandomForestClassifier
+    from sklearn.linear_model import LogisticRegression
 
     observations, labels, _ = bundle.get_split_data("train")
     flat = observations.reshape(observations.shape[0], -1)
-    if model_type == "rf":
+    use_cuda = cuda_requested_or_auto(hyperparameters)
+    requested_device = str(hyperparameters.get("device", "auto")).strip().lower()
+    if use_cuda and model_type == "logistic_regression":
+        try:
+            from cuml.linear_model import LogisticRegression as CuMLLogisticRegression
+
+            estimator = CuMLLogisticRegression(
+                penalty=str(hyperparameters.get("penalty", "l2")),
+                C=float(hyperparameters.get("C", 1.0)),
+                max_iter=int(hyperparameters.get("max_iter", 1000)),
+                tol=float(hyperparameters.get("tol", 1e-4)),
+                fit_intercept=bool(hyperparameters.get("fit_intercept", True)),
+            )
+            estimator.fit(flat, labels)
+            predictions = array_to_numpy(estimator.predict(flat)).astype(np.int64)
+            accuracy = float(np.mean(predictions == labels))
+            return estimator, [{"train_accuracy": accuracy, "backend": "cuml_cuda"}], "cuml_cuda"
+        except Exception as exc:
+            if requested_device == "cuda":
+                raise RuntimeError("CUDA logistic_regression requested, but cuML training failed.") from exc
+    if use_cuda and model_type == "rf":
+        try:
+            from cuml.ensemble import RandomForestClassifier as CuMLRandomForestClassifier
+
+            estimator = CuMLRandomForestClassifier(
+                n_estimators=int(hyperparameters.get("n_estimators", 300)),
+                max_depth=int(hyperparameters.get("max_depth", 10)),
+                max_features=hyperparameters.get("max_features", "sqrt"),
+                bootstrap=bool(hyperparameters.get("bootstrap", True)),
+                random_state=int(hyperparameters.get("seed", 42)),
+                n_streams=int(hyperparameters.get("n_streams", 4)),
+            )
+            estimator.fit(flat, labels)
+            predictions = array_to_numpy(estimator.predict(flat)).astype(np.int64)
+            accuracy = float(np.mean(predictions == labels))
+            return estimator, [{"train_accuracy": accuracy, "backend": "cuml_cuda"}], "cuml_cuda"
+        except Exception as exc:
+            if requested_device == "cuda":
+                raise RuntimeError("CUDA random forest requested, but cuML training failed.") from exc
+    if model_type == "logistic_regression":
+        estimator = LogisticRegression(
+            penalty=str(hyperparameters.get("penalty", "l2")),
+            C=float(hyperparameters.get("C", 1.0)),
+            solver=str(hyperparameters.get("solver", "saga")),
+            max_iter=int(hyperparameters.get("max_iter", 1000)),
+            tol=float(hyperparameters.get("tol", 1e-4)),
+            class_weight=hyperparameters.get("class_weight", None),
+            fit_intercept=bool(hyperparameters.get("fit_intercept", True)),
+            random_state=int(hyperparameters.get("seed", 42)),
+            n_jobs=int(hyperparameters.get("n_jobs", -1)),
+        )
+    elif model_type == "rf":
         estimator = RandomForestClassifier(
             n_estimators=int(hyperparameters.get("n_estimators", 300)),
             max_depth=int(hyperparameters.get("max_depth", 10)),
@@ -804,40 +885,71 @@ def train_sklearn_model(
     elif model_type == "xgboost":
         from xgboost import XGBClassifier
 
-        estimator = XGBClassifier(
-            n_estimators=int(hyperparameters.get("n_estimators", 500)),
-            max_depth=int(hyperparameters.get("max_depth", 4)),
-            learning_rate=float(hyperparameters.get("learning_rate", 0.03)),
-            subsample=float(hyperparameters.get("subsample", 0.9)),
-            colsample_bytree=float(hyperparameters.get("colsample_bytree", 0.9)),
-            min_child_weight=float(hyperparameters.get("min_child_weight", 1.0)),
-            reg_alpha=float(hyperparameters.get("reg_alpha", 0.0)),
-            reg_lambda=float(hyperparameters.get("reg_lambda", 1.0)),
-            objective=str(hyperparameters.get("objective", "binary:logistic")),
-            eval_metric=str(hyperparameters.get("eval_metric", "logloss")),
-            tree_method=str(hyperparameters.get("tree_method", "hist")),
-            n_jobs=int(hyperparameters.get("n_jobs", -1)),
-            random_state=int(hyperparameters.get("seed", 42)),
-        )
+        xgb_params = {
+            "n_estimators": int(hyperparameters.get("n_estimators", 500)),
+            "max_depth": int(hyperparameters.get("max_depth", 4)),
+            "learning_rate": float(hyperparameters.get("learning_rate", 0.03)),
+            "subsample": float(hyperparameters.get("subsample", 0.9)),
+            "colsample_bytree": float(hyperparameters.get("colsample_bytree", 0.9)),
+            "min_child_weight": float(hyperparameters.get("min_child_weight", 1.0)),
+            "reg_alpha": float(hyperparameters.get("reg_alpha", 0.0)),
+            "reg_lambda": float(hyperparameters.get("reg_lambda", 1.0)),
+            "objective": str(hyperparameters.get("objective", "binary:logistic")),
+            "eval_metric": str(hyperparameters.get("eval_metric", "logloss")),
+            "tree_method": str(hyperparameters.get("tree_method", "hist")),
+            "n_jobs": int(hyperparameters.get("n_jobs", -1)),
+            "random_state": int(hyperparameters.get("seed", 42)),
+        }
+        if use_cuda:
+            gpu_params = {**xgb_params, "device": "cuda", "tree_method": "hist"}
+            estimator = XGBClassifier(**gpu_params)
+            try:
+                estimator.fit(flat, labels)
+                accuracy = float(estimator.score(flat, labels))
+                return estimator, [{"train_accuracy": accuracy, "backend": "xgboost_cuda"}], "xgboost_cuda"
+            except Exception as exc:
+                if requested_device == "cuda":
+                    raise RuntimeError("CUDA XGBoost requested, but GPU training failed.") from exc
+        estimator = XGBClassifier(**xgb_params)
     else:
         raise ValueError(f"Unsupported sklearn model_type: {model_type}")
     estimator.fit(flat, labels)
     accuracy = float(estimator.score(flat, labels))
-    return estimator, [{"train_accuracy": accuracy}]
+    return estimator, [{"train_accuracy": accuracy, "backend": "sklearn_cpu"}], "sklearn_cpu"
 
 
 def evaluate_sklearn_model(estimator: Any, bundle: DirectionDatasetBundle) -> tuple[np.ndarray, np.ndarray]:
     observations, _, _ = bundle.get_split_data("test")
     flat = observations.reshape(observations.shape[0], -1)
-    predictions = estimator.predict(flat).astype(np.int8)
-    if hasattr(estimator, "predict_proba"):
-        probabilities = estimator.predict_proba(flat)
-        if probabilities.ndim == 2:
-            confidence = np.max(probabilities, axis=1).astype(np.float32)
+    prediction_input = flat
+    try:
+        params = estimator.get_xgb_params()
+        if str(params.get("device", "")).startswith("cuda"):
+            import cupy as cp
+
+            prediction_input = cp.asarray(flat)
+    except Exception:
+        prediction_input = flat
+    try:
+        predictions = array_to_numpy(estimator.predict(prediction_input)).astype(np.int8)
+        if hasattr(estimator, "predict_proba"):
+            probabilities = array_to_numpy(estimator.predict_proba(prediction_input))
+            if probabilities.ndim == 2:
+                confidence = np.max(probabilities, axis=1).astype(np.float32)
+            else:
+                confidence = probabilities.astype(np.float32)
         else:
-            confidence = probabilities.astype(np.float32)
-    else:
-        confidence = np.ones(len(predictions), dtype=np.float32)
+            confidence = np.ones(len(predictions), dtype=np.float32)
+    except Exception:
+        predictions = array_to_numpy(estimator.predict(flat)).astype(np.int8)
+        if hasattr(estimator, "predict_proba"):
+            probabilities = array_to_numpy(estimator.predict_proba(flat))
+            if probabilities.ndim == 2:
+                confidence = np.max(probabilities, axis=1).astype(np.float32)
+            else:
+                confidence = probabilities.astype(np.float32)
+        else:
+            confidence = np.ones(len(predictions), dtype=np.float32)
     return predictions, confidence
 
 
@@ -871,8 +983,8 @@ def train_model(
         joblib.dump(bundle.scaler, scaler_path)
     except Exception:
         scaler_path.write_bytes(pickle.dumps(bundle.scaler))
-    if model_key in {"rf", "xgboost"}:
-        estimator, history = train_sklearn_model(model_key, bundle, hyperparameters)
+    if model_key in {"logistic_regression", "rf", "xgboost"}:
+        estimator, history, backend = train_sklearn_model(model_key, bundle, hyperparameters)
         predictions, probabilities = evaluate_sklearn_model(estimator, bundle)
         weights_path = output_dir / "weights.bin"
         try:
@@ -881,12 +993,15 @@ def train_model(
             joblib.dump(estimator, weights_path)
         except Exception:
             weights_path.write_bytes(pickle.dumps(estimator))
+        del estimator
+        gc.collect()
         return {
             "predictions": predictions,
             "probabilities": probabilities,
             "history": history,
             "scaler_path": str(output_dir / "scaler.pkl"),
-            "backend": "sklearn",
+            "backend": backend,
+            "device": "cuda" if backend.endswith("_cuda") else "cpu",
             "train_length": bundle.train_row_count,
             "test_length": bundle.test_row_count,
         }
@@ -956,7 +1071,7 @@ def train_model(
         },
         output_dir / "weights.bin",
     )
-    return {
+    result = {
         "predictions": predictions,
         "probabilities": probabilities,
         "history": history,
@@ -966,3 +1081,7 @@ def train_model(
         "train_length": bundle.train_row_count,
         "test_length": bundle.test_row_count,
     }
+    policy.to("cpu")
+    del policy
+    release_torch_memory()
+    return result

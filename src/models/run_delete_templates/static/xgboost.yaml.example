@@ -1,0 +1,25 @@
+﻿model_type: xgboost # lstm | transformer | mamba | nn | logistic_regression | rf | xgboost | bc | dagger | ppo | actor_critic
+variation_id: 1 # >= 1; canonical var_1 = 1
+train_mode: static_baseline # static_baseline | sliding_window_current_only | sliding_window_continue | sliding_window_retrain | post_base
+force_run: false # true | false; true bypasses duplicate/tombstone blocking
+hyperparameters:
+  seed: 42 # >= 0 integer
+  train_length: 100000 # >= 1 integer; canonical 100000
+  test_length: 5000 # >= 1 integer; canonical 5000
+  sequence_length: 24 # >= 1 integer; legacy default 24
+  action_dim: 2 # 2 for binary sell/buy; 0=sell, 1=buy
+  n_estimators: 500 # >= 1 integer
+  max_depth: 4 # >= 1 integer
+  learning_rate: 0.03 # > 0 float
+  subsample: 0.9 # [0.0, 1.0] float
+  colsample_bytree: 0.9 # [0.0, 1.0] float
+  min_child_weight: 1.0 # >= 0 float
+  reg_alpha: 0.0 # >= 0 float
+  reg_lambda: 1.0 # >= 0 float
+  objective: binary:logistic # binary:logistic default
+  eval_metric: logloss # logloss | error | auc
+  tree_method: hist # hist | approx | exact; CUDA uses hist with device=cuda
+  n_jobs: -1 # -1 all cores | positive worker count
+  device: auto # auto | cuda | cpu; auto tries CUDA XGBoost then CPU
+
+

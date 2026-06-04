@@ -1,0 +1,25 @@
+﻿model_type: logistic_regression # lstm | transformer | mamba | nn | logistic_regression | rf | xgboost | bc | dagger | ppo | actor_critic
+variation_id: 1 # >= 1; canonical var_1 = 1
+train_mode: sliding_window_retrain # static_baseline | sliding_window_current_only | sliding_window_continue | sliding_window_retrain | post_base
+force_run: false # true | false; true bypasses duplicate/tombstone blocking
+hyperparameters:
+  seed: 42 # >= 0 integer
+  train_length: 100000 # >= 1 integer; canonical 100000
+  test_length: 5000 # >= 1 integer; canonical 5000
+  sequence_length: 24 # >= 1 integer; legacy default 24
+  action_dim: 2 # 2 for binary sell/buy; 0=sell, 1=buy
+  penalty: l2 # l2
+  C: 1.0 # > 0 float; inverse regularization strength
+  solver: saga # saga
+  max_iter: 1000 # >= 1 integer
+  tol: 0.0001 # > 0 float
+  class_weight: null # null | balanced
+  fit_intercept: true # true | false
+  n_jobs: -1 # -1 all cores | positive worker count
+  device: auto # auto | cuda | cpu; auto tries CUDA/cuML then CPU
+  window_hours: 1000 # >= 1 integer
+  window_stride_hours: 1000 # >= 1 integer
+  num_windows: 5 # >= 1 integer
+  window_start_index: 0 # >= 0 integer
+  continue_from_previous: false # true | false
+

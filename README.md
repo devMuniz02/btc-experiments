@@ -12,7 +12,7 @@
 ![Azure](https://img.shields.io/badge/Azure-Disabled%20Until%20Sync-0078D4?logo=microsoftazure&logoColor=white)
 ![CUDA](https://img.shields.io/badge/CUDA-Backtest%20Kernel-76B900?logo=nvidia&logoColor=white)
 
-Last updated: `2026-06-02T18:45:01.553627+00:00`
+Last updated: `2026-06-04T18:38:24.364112+00:00`
 
 Quant-Stream is a local, file-state BTC 1h research pipeline. YAML requests move through automation folders, models write local artifacts, and prediction columns accumulate in variation-level parquet result stores.
 
@@ -36,13 +36,13 @@ Supported training modes: `static_baseline`, `sliding_window_current_only`, `sli
 
 | total | pending | done | rejected | deleted |
 | --- | --- | --- | --- | --- |
-| 4 | 0 | 3 | 0 | 1 |
+| 182 | 1 | 174 | 5 | 2 |
 
 ## Top Dev Model
 
 | model_id | model_type | variation_or_slot | status | latest_timestamp | prediction_count | signal_count | mean_probability | accuracy | accuracy_q1 | accuracy_q2 | accuracy_q3 | win_rate | net_wins | net_wins_per_day | net_pnl | max_drawdown | source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1be2527d3372a6b3e61c2e45 | lstm | var_1 | completed | 2026-05-04 22:00:00+00:00 | 5000 | 5000 | 0.940541 | 0.51 | 0.5096 | 0.5092 | 0.506133 | 0.51 | 100 | 0.478469 | 1718.46 | -0.796204 | dev_global_results |
+| 739b5d86e8d3e68500b57f9c | lstm | var_1 | completed | 2026-05-04 22:00:00+00:00 | 5000 | 5000 | 0.951012 | 0.5166 | 0.5192 | 0.5164 | 0.516267 | 0.5166 | 166 | 0.794258 | 9178.14 | -0.517852 | dev_global_results |
 
 ## Production Slots
 

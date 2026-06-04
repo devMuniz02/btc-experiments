@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
+import os
 import shutil
+import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,7 +15,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.models.ensemble import build_ensemble_predictions
+from src.models.ensemble import train_stacked_logistic_ensemble
 from src.models.backtest import BacktestConfig, run_binary_backtest
 from src.models.training import train_model
 from automation.update_readme import update_readme
@@ -30,6 +34,7 @@ SUPPORTED_MODEL_TYPES = {
     "bc",
     "dagger",
     "ensemble",
+    "logistic_regression",
     "lstm",
     "mamba",
     "mamba_post_base",
@@ -61,6 +66,46 @@ class RequestOutcome:
     target_path: str
     model_id: str = ""
     reason: str = ""
+    worker_pid: int = 0
+    rss_mb_before_cleanup: float | None = None
+    rss_mb_after_cleanup: float | None = None
+
+
+def current_rss_mb() -> float | None:
+    try:
+        import psutil
+
+        return round(psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024), 3)
+    except Exception:
+        return None
+
+
+def trim_windows_working_set() -> None:
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        psapi = ctypes.WinDLL("psapi", use_last_error=True)
+        handle = kernel32.GetCurrentProcess()
+        psapi.EmptyWorkingSet(handle)
+    except Exception:
+        pass
+
+
+def release_runtime_memory() -> None:
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+    except Exception:
+        pass
+    trim_windows_working_set()
 
 
 def validate_request(payload: dict[str, Any]) -> None:
@@ -80,11 +125,15 @@ def validate_request(payload: dict[str, Any]) -> None:
         raise ValueError("hyperparameters must be a mapping.")
     if model_type == "ensemble":
         models_pool = hyperparameters.get("models_pool")
-        mechanism = str(hyperparameters.get("voting_mechanism", "")).strip().lower()
+        ensemble_mode = str(hyperparameters.get("ensemble_mode", "stacked_logistic")).strip().lower()
+        if ensemble_mode != "stacked_logistic":
+            raise ValueError("automation ensemble requests only support ensemble_mode: stacked_logistic.")
         if not isinstance(models_pool, list) or not models_pool:
             raise ValueError("ensemble hyperparameters.models_pool must be a non-empty list.")
-        if mechanism not in {"hard_majority", "soft_average", "unanimity"}:
-            raise ValueError("ensemble voting_mechanism must be hard_majority, soft_average, or unanimity.")
+        if len(models_pool) < 2:
+            raise ValueError("ensemble hyperparameters.models_pool must include at least two trained model ids.")
+        if train_mode != "static_baseline":
+            raise ValueError("stacked_logistic ensembles are only supported with train_mode: static_baseline.")
 
 
 def reject_request(paths: QuantStreamPaths, source_path: Path, message: str) -> RequestOutcome:
@@ -246,8 +295,15 @@ def process_run_request(paths: QuantStreamPaths, request_path: Path) -> RequestO
         _train_frame, test_frame = split_train_test(clean_frame)
         results = read_global_results(paths, variation_id, test_frame)
         if str(payload["model_type"]).lower() == "ensemble":
-            predictions, probabilities = build_ensemble_predictions(results, payload["hyperparameters"])
-            training_payload: dict[str, Any] = {"history": [], "backend": "ensemble"}
+            model_dir = paths.variation_models_dir(variation_id) / model_id
+            predictions, probabilities, training_payload = train_stacked_logistic_ensemble(
+                clean_frame=clean_frame,
+                results=results,
+                models_root=paths.models_dev_dir,
+                variation_id=variation_id,
+                hyperparameters=payload["hyperparameters"],
+                output_dir=model_dir,
+            )
         else:
             model_dir = paths.variation_models_dir(variation_id) / model_id
             training_payload = train_model(
@@ -259,10 +315,15 @@ def process_run_request(paths: QuantStreamPaths, request_path: Path) -> RequestO
             )
             predictions = training_payload["predictions"]
             probabilities = training_payload["probabilities"]
-        if len(predictions) != len(test_frame) or len(probabilities) != len(test_frame):
+        expected_rows = len(test_frame)
+        evaluated_rows = len(predictions)
+        if evaluated_rows < expected_rows and str(payload.get("trial_source", "")).lower() == "optuna":
+            predictions = np.pad(predictions, (0, expected_rows - evaluated_rows), constant_values=0)
+            probabilities = np.pad(probabilities, (0, expected_rows - evaluated_rows), constant_values=0.0)
+        if len(predictions) != expected_rows or len(probabilities) != expected_rows:
             raise ValueError(
                 f"Model returned {len(predictions)} predictions and {len(probabilities)} probabilities; "
-                f"expected {len(test_frame)} test rows."
+                f"expected {expected_rows} test rows."
             )
         results[f"{model_id}_pred"] = predictions
         results[f"{model_id}_prob"] = probabilities
@@ -280,7 +341,8 @@ def process_run_request(paths: QuantStreamPaths, request_path: Path) -> RequestO
             "scaler_path": training_payload.get("scaler_path", ""),
             "training_history": training_payload.get("history", []),
             "resolved_train_length": training_payload.get("train_length", ""),
-            "resolved_test_length": training_payload.get("test_length", ""),
+            "resolved_test_length": training_payload.get("test_length", evaluated_rows),
+            "evaluated_rows": evaluated_rows,
         }
         write_model_artifacts(
             paths,
@@ -325,10 +387,100 @@ def process_delete_request(paths: QuantStreamPaths, request_path: Path) -> Reque
         tombstone = {**payload, "model_id": model_id, "deleted_at": utc_now_iso(), "status": "deleted"}
         tombstone_path = paths.deleted_runs_dir / f"{model_id}.yaml"
         write_yaml_file(tombstone_path, tombstone)
+        done_path = paths.runs_done_dir / f"{model_id}.yaml"
+        if done_path.exists():
+            done_path.unlink()
         request_path.unlink()
         return RequestOutcome("deleted", str(request_path), str(tombstone_path), model_id=model_id)
     except Exception as exc:
         return reject_request(paths, request_path, str(exc))
+
+
+def outcome_from_dict(payload: dict[str, Any]) -> RequestOutcome:
+    return RequestOutcome(
+        status=str(payload.get("status", "")),
+        source_path=str(payload.get("source_path", "")),
+        target_path=str(payload.get("target_path", "")),
+        model_id=str(payload.get("model_id", "")),
+        reason=str(payload.get("reason", "")),
+        worker_pid=int(payload.get("worker_pid") or 0),
+        rss_mb_before_cleanup=payload.get("rss_mb_before_cleanup"),
+        rss_mb_after_cleanup=payload.get("rss_mb_after_cleanup"),
+    )
+
+
+def parse_worker_outcome(stdout: str) -> RequestOutcome | None:
+    for line in reversed(stdout.splitlines()):
+        line = line.strip()
+        if not line.startswith("{") or not line.endswith("}"):
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and "status" in payload and "source_path" in payload:
+            return outcome_from_dict(payload)
+    return None
+
+
+def run_request_worker(kind: str, request_path: Path, root: Path | None = None) -> RequestOutcome:
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        f"--process-{kind}-request",
+        str(request_path),
+    ]
+    if root is not None:
+        command.extend(["--root", str(root)])
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    outcome = parse_worker_outcome(completed.stdout)
+    if outcome is not None:
+        return outcome
+    details = (completed.stderr or completed.stdout or "").strip().splitlines()
+    reason = (
+        "\n".join(details[-8:]) if details else f"Worker exited with code {completed.returncode} without JSON output."
+    )
+    return RequestOutcome(
+        "worker_error",
+        str(request_path),
+        "",
+        reason=reason,
+        worker_pid=0,
+    )
+
+
+def finalize_worker_outcome(outcome: RequestOutcome, before_cleanup: float | None) -> RequestOutcome:
+    release_runtime_memory()
+    after_cleanup = current_rss_mb()
+    return RequestOutcome(
+        status=outcome.status,
+        source_path=outcome.source_path,
+        target_path=outcome.target_path,
+        model_id=outcome.model_id,
+        reason=outcome.reason,
+        worker_pid=os.getpid(),
+        rss_mb_before_cleanup=before_cleanup,
+        rss_mb_after_cleanup=after_cleanup,
+    )
+
+
+def process_single_worker(kind: str, request_path: Path, root: Path | None = None) -> RequestOutcome:
+    paths = QuantStreamPaths(root=root or QuantStreamPaths().root)
+    ensure_quant_stream_layout(paths)
+    before_cleanup: float | None = None
+    try:
+        if kind == "run":
+            outcome = process_run_request(paths, request_path)
+        elif kind == "delete":
+            outcome = process_delete_request(paths, request_path)
+        else:
+            raise ValueError(f"Unsupported worker kind: {kind}")
+        before_cleanup = current_rss_mb()
+        return finalize_worker_outcome(outcome, before_cleanup)
+    except Exception as exc:
+        before_cleanup = current_rss_mb()
+        outcome = RequestOutcome("worker_error", str(request_path), "", reason=str(exc))
+        return finalize_worker_outcome(outcome, before_cleanup)
 
 
 def run_once(root: Path | None = None) -> list[RequestOutcome]:
@@ -336,10 +488,11 @@ def run_once(root: Path | None = None) -> list[RequestOutcome]:
     ensure_quant_stream_layout(paths)
     outcomes: list[RequestOutcome] = []
     for request_path in sorted(paths.run_requests_dir.glob("*.y*ml")):
-        outcomes.append(process_run_request(paths, request_path))
+        outcomes.append(run_request_worker("run", request_path, paths.root))
     for request_path in sorted(paths.delete_requests_dir.glob("*.y*ml")):
-        outcomes.append(process_delete_request(paths, request_path))
+        outcomes.append(run_request_worker("delete", request_path, paths.root))
     update_readme(paths.root)
+    release_runtime_memory()
     return outcomes
 
 
@@ -348,12 +501,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--once", action="store_true", help="Process pending requests once and exit.")
     parser.add_argument("--interval-seconds", type=float, default=10.0)
     parser.add_argument("--root", default="")
+    parser.add_argument("--process-run-request", default="", help=argparse.SUPPRESS)
+    parser.add_argument("--process-delete-request", default="", help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     root = Path(args.root).resolve() if args.root else None
+    if args.process_run_request:
+        outcome = process_single_worker("run", Path(args.process_run_request).resolve(), root)
+        print(json.dumps(outcome.__dict__, separators=(",", ":")), flush=True)
+        return 0 if outcome.status != "worker_error" else 1
+    if args.process_delete_request:
+        outcome = process_single_worker("delete", Path(args.process_delete_request).resolve(), root)
+        print(json.dumps(outcome.__dict__, separators=(",", ":")), flush=True)
+        return 0 if outcome.status != "worker_error" else 1
     while True:
         outcomes = run_once(root=root)
         print(json.dumps([outcome.__dict__ for outcome in outcomes], indent=2), flush=True)

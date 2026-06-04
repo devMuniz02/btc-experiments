@@ -1,0 +1,29 @@
+﻿model_type: mamba # lstm | transformer | mamba | nn | logistic_regression | rf | xgboost | bc | dagger | ppo | actor_critic
+variation_id: 1 # >= 1; canonical var_1 = 1
+train_mode: sliding_window_continue # static_baseline | sliding_window_current_only | sliding_window_continue | sliding_window_retrain | post_base
+force_run: false # true | false; true bypasses duplicate/tombstone blocking
+hyperparameters:
+  seed: 42 # >= 0 integer
+  train_length: 100000 # >= 1 integer; canonical 100000
+  test_length: 5000 # >= 1 integer; canonical 5000
+  sequence_length: 24 # >= 1 integer; legacy default 24
+  action_dim: 2 # 2 for binary sell/buy; 0=sell, 1=buy
+  hidden_dim: 192 # >= 1 integer
+  num_layers: 3 # >= 1 integer
+  epochs: 20 # >= 1 integer
+  batch_size: 128 # >= 1 integer; lower on CUDA OOM
+  eval_batch_size: 1024 # >= 1 integer
+  learning_rate: 0.001 # > 0 float
+  weight_decay: 0.0 # >= 0 float
+  dropout: 0.1 # [0.0, 1.0] float
+  gradient_clip_norm: 0.0 # >= 0 float; 0 disables
+  early_stopping_patience: 0 # >= 0 integer; 0 disables
+  validation_fraction: 0.0 # [0.0, 1.0) float; 0 disables
+  window_hours: 1000 # >= 1 integer
+  window_stride_hours: 1000 # >= 1 integer
+  num_windows: 5 # >= 1 integer
+  window_start_index: 0 # >= 0 integer
+  continue_from_previous: false # true | false
+  device: auto # auto | cuda | cpu
+  preload_to_device: true # true | false
+

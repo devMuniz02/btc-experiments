@@ -19,9 +19,33 @@ from automation.update_readme import (
     top_dev_model,
 )
 from src.models.backtest import BacktestConfig, model_ids_from_results, run_binary_backtest
+from src.models.ensemble import build_ensemble_predictions
 from src.utils import QuantStreamPaths, read_yaml_file
 
+OPTUNA_AVAILABLE = False
+DEFAULT_CONFIG_PATH = Path("automation/optimization/search_config.yaml")
+load_search_config: Any = None
+load_study: Any = None
+completed_run_metrics: Any = None
+top_candidate_rows: Any = None
+top5_rows: Any = None
+
+try:
+    from src.optimization.orchestrator import (
+        DEFAULT_CONFIG_PATH,
+        completed_run_metrics,
+        load_config as load_search_config,
+        load_study,
+        top_candidate_rows,
+        top5_rows,
+    )
+
+    OPTUNA_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    pass
+
 METRIC_ORDER = [
+    "model_label",
     "model_id",
     "prediction_count",
     "signal_count",
@@ -53,6 +77,7 @@ TRADE_COLUMNS = [
     "pnl_fraction",
     "pnl",
     "equity",
+    "model_label",
     "model_id",
 ]
 BET_MODE_LABELS = {
@@ -69,6 +94,35 @@ DAY_OPTIONS = {
     "Sat": 5,
     "Sun": 6,
 }
+
+
+def optimization_trial_rows(study: Any) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for trial in study.trials:
+        precision = trial.values[0] if trial.values else None
+        density = trial.values[1] if trial.values else None
+        family = trial.user_attrs.get("model_family") or trial.params.get("model_family")
+        if family is None:
+            family = next(
+                (value for key, value in trial.params.items() if str(key).startswith("model_family_")),
+                "-",
+            )
+        rows.append(
+            {
+                "trial": trial.number,
+                "state": trial.state.name,
+                "model_label": trial.user_attrs.get("model_label", "-"),
+                "model_id": trial.user_attrs.get("model_id", "-"),
+                "family": family,
+                "precision_at_threshold": precision,
+                "trade_density": density,
+                "efficiency_score": (float(precision) * float(density)) if precision is not None and density else None,
+                "threshold": trial.user_attrs.get("threshold", trial.params.get("threshold", "-")),
+                "executed_count": trial.user_attrs.get("executed_count", "-"),
+                "trial_source": trial.user_attrs.get("trial_source", "-"),
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def list_variations(paths: QuantStreamPaths) -> list[str]:
@@ -125,11 +179,19 @@ def render_run_overview(paths: QuantStreamPaths) -> None:
         st.dataframe(request_rows(paths.deleted_runs_dir), use_container_width=True, hide_index=True)
 
 
-def formatted_metrics(metrics: dict[str, Any]) -> dict[str, str]:
-    return {key: fmt_number(metrics.get(key)) for key in METRIC_ORDER}
+def formatted_metrics(metrics: dict[str, Any], label_map: dict[str, str] | None = None) -> dict[str, str]:
+    row = {key: fmt_number(metrics.get(key)) for key in METRIC_ORDER}
+    model_id = str(metrics.get("model_id") or "")
+    row["model_label"] = (label_map or {}).get(model_id, str(metrics.get("model_label") or "-"))
+    return row
 
 
-def model_metric_table(results: pd.DataFrame, model_ids: list[str], threshold: float = 0.5) -> pd.DataFrame:
+def model_metric_table(
+    results: pd.DataFrame,
+    model_ids: list[str],
+    threshold: float = 0.5,
+    label_map: dict[str, str] | None = None,
+) -> pd.DataFrame:
     rows = []
     for model_id in model_ids:
         backtest = run_binary_backtest(
@@ -137,14 +199,24 @@ def model_metric_table(results: pd.DataFrame, model_ids: list[str], threshold: f
             model_id,
             config=BacktestConfig(confidence_threshold=threshold, use_cuda="cpu"),
         )
-        rows.append(formatted_metrics(backtest.metrics))
+        rows.append(formatted_metrics(backtest.metrics, label_map))
     return pd.DataFrame(rows, columns=METRIC_ORDER)
 
 
 def render_top_model(paths: QuantStreamPaths) -> None:
     st.subheader("Top Dev Model")
     row = top_dev_model(paths)
-    st.dataframe(pd.DataFrame([row], columns=METRIC_COLUMNS), use_container_width=True, hide_index=True)
+    model_id = str(row.get("model_id") or "")
+    variation = str(row.get("variation_or_slot") or "var_1")
+    label = "-"
+    if model_id and model_id != "-":
+        label = model_chart_labels(paths, variation, [model_id]).get(model_id, "-")
+    row = {"model_label": label, **row}
+    st.dataframe(
+        pd.DataFrame([row], columns=["model_label", *METRIC_COLUMNS]),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 def render_model_detail(paths: QuantStreamPaths, variation: str, model_id: str) -> None:
@@ -169,7 +241,7 @@ def render_model_detail(paths: QuantStreamPaths, variation: str, model_id: str) 
             st.info("No tracking buffer for this model.")
 
 
-def model_chart_labels(paths: QuantStreamPaths, variation: str, model_ids: list[str]) -> dict[str, str]:
+def load_model_metadata(paths: QuantStreamPaths, variation: str, model_ids: list[str]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     variation_id = variation.removeprefix("var_")
     for model_id in model_ids:
@@ -188,21 +260,84 @@ def model_chart_labels(paths: QuantStreamPaths, variation: str, model_ids: list[
         )
         if pd.isna(timestamp):
             timestamp = pd.Timestamp.max.tz_localize("UTC")
+        train_mode = str(metadata.get("train_mode") or "-").strip().lower()
         rows.append(
             {
                 "model_id": model_id,
-                "model_type": str(metadata.get("model_type") or "model").strip().lower(),
-                "timestamp": timestamp,
+                "model_type": str(metadata.get("model_type") or "unknown").strip().lower(),
+                "train_mode": train_mode,
+                "training_group": training_group(train_mode),
+                "finalized_at": timestamp,
             }
         )
+    return pd.DataFrame(rows, columns=["model_id", "model_type", "train_mode", "training_group", "finalized_at"])
+
+
+def training_group(train_mode: str) -> str:
+    mode = str(train_mode or "").strip().lower()
+    if mode == "static_baseline":
+        return "static"
+    if mode.startswith("sliding_window") or mode.startswith("windowed"):
+        return "window"
+    if mode == "post_base":
+        return "post_base"
+    if mode == "reinforcement_ppo":
+        return "reinforcement"
+    return mode or "unknown"
+
+
+def filter_model_ids(metadata: pd.DataFrame, *, key_prefix: str) -> list[str]:
+    if metadata.empty:
+        return []
+    model_types = sorted(str(value) for value in metadata["model_type"].dropna().unique())
+    training_groups = sorted(str(value) for value in metadata["training_group"].dropna().unique())
+    train_modes = sorted(str(value) for value in metadata["train_mode"].dropna().unique())
+    columns = st.columns(3)
+    with columns[0]:
+        selected_types = st.multiselect(
+            "Model Family",
+            model_types,
+            default=model_types,
+            key=f"{key_prefix}_model_family",
+        )
+    with columns[1]:
+        selected_groups = st.multiselect(
+            "Training Type",
+            training_groups,
+            default=training_groups,
+            key=f"{key_prefix}_training_type",
+        )
+    with columns[2]:
+        selected_modes = st.multiselect(
+            "Train Mode",
+            train_modes,
+            default=train_modes,
+            key=f"{key_prefix}_train_mode",
+        )
+    filtered = metadata[
+        metadata["model_type"].isin(selected_types)
+        & metadata["training_group"].isin(selected_groups)
+        & metadata["train_mode"].isin(selected_modes)
+    ]
+    return [str(model_id) for model_id in filtered.sort_values(["model_type", "finalized_at", "model_id"])["model_id"]]
+
+
+def model_chart_labels(paths: QuantStreamPaths, variation: str, model_ids: list[str]) -> dict[str, str]:
+    frame = load_model_metadata(paths, variation, model_ids).rename(columns={"finalized_at": "timestamp"})
     labels: dict[str, str] = {}
-    frame = pd.DataFrame(rows)
     if frame.empty:
         return labels
     for model_type, group in frame.sort_values(["model_type", "timestamp", "model_id"]).groupby("model_type"):
         for index, row in enumerate(group.itertuples(index=False), start=1):
             labels[str(row.model_id)] = f"{model_type} {index}"
     return labels
+
+
+def model_label_formatter(label_map: dict[str, str]):
+    def format_model(model_id: str) -> str:
+        return label_map.get(str(model_id), str(model_id))
+
+    return format_model
 
 
 def render_backtest_sandbox(
@@ -214,8 +349,13 @@ def render_backtest_sandbox(
     if not model_ids:
         st.info("No model prediction columns found.")
         return
-    selected = st.multiselect("Models", model_ids, default=model_ids[: min(5, len(model_ids))])
     label_map = model_chart_labels(paths, variation, model_ids)
+    selected = st.multiselect(
+        "Models",
+        model_ids,
+        default=model_ids[: min(5, len(model_ids))],
+        format_func=model_label_formatter(label_map),
+    )
     control_columns = st.columns(4)
     with control_columns[0]:
         balance = st.number_input("Starting Balance", min_value=1.0, value=1000.0, step=100.0)
@@ -246,6 +386,37 @@ def render_backtest_sandbox(
         if range_percentage < 100 and not results.empty:
             row_count = max(1, int(np.ceil(len(results) * (range_percentage / 100.0))))
             results = results.iloc[:row_count].reset_index(drop=True)
+    st.divider()
+    use_temporary_ensemble = st.checkbox("Temporary Voting Ensemble", value=False)
+    ensemble_members: list[str] = []
+    ensemble_mechanism = "hard_majority"
+    ensemble_min_member_probability = 0.0
+    ensemble_require_unanimous_confidence = False
+    if use_temporary_ensemble:
+        ensemble_columns = st.columns(4)
+        with ensemble_columns[0]:
+            ensemble_members = st.multiselect(
+                "Ensemble Members",
+                model_ids,
+                default=selected[: min(3, len(selected))],
+                format_func=model_label_formatter(label_map),
+            )
+        with ensemble_columns[1]:
+            ensemble_mechanism = st.selectbox(
+                "Voting",
+                ["hard_majority", "soft_probability", "unanimity"],
+                index=0,
+            )
+        with ensemble_columns[2]:
+            ensemble_min_member_probability = st.slider(
+                "Member Min Probability",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.0,
+                step=0.01,
+            )
+        with ensemble_columns[3]:
+            ensemble_require_unanimous_confidence = st.checkbox("Require All Members Confident", value=False)
     curves: list[pd.DataFrame] = []
     metrics: list[dict[str, str]] = []
     latest_trades = pd.DataFrame()
@@ -265,13 +436,61 @@ def render_backtest_sandbox(
                 use_cuda=str(use_cuda),
             ),
         )
-        metrics.append(formatted_metrics(backtest.metrics))
+        metrics.append(formatted_metrics(backtest.metrics, label_map))
         trades = backtest.trades.copy()
         if not trades.empty:
             trades["model_id"] = model_id
             trades["model_label"] = label_map.get(model_id, model_id)
             curves.append(trades[["timestamp", "equity", "model_label"]])
             latest_trades = pd.concat([latest_trades, trades.tail(50)], ignore_index=True)
+    if use_temporary_ensemble:
+        if len(ensemble_members) < 2:
+            st.warning("Temporary voting ensemble needs at least two selected trained models.")
+        else:
+            temporary_model_id = "__temporary_voting_ensemble__"
+            temporary_results = results.copy()
+            try:
+                predictions, probabilities = build_ensemble_predictions(
+                    temporary_results,
+                    {
+                        "models_pool": ensemble_members,
+                        "voting_mechanism": ensemble_mechanism,
+                        "min_member_probability": float(ensemble_min_member_probability),
+                        "require_unanimous_confidence": bool(ensemble_require_unanimous_confidence),
+                    },
+                )
+            except ValueError as exc:
+                st.warning(str(exc))
+                predictions = np.asarray([], dtype=np.int8)
+                probabilities = np.asarray([], dtype=np.float32)
+            if len(predictions) > 0:
+                temporary_results[f"{temporary_model_id}_pred"] = predictions
+                temporary_results[f"{temporary_model_id}_prob"] = probabilities
+                backtest = run_binary_backtest(
+                    temporary_results,
+                    temporary_model_id,
+                    config=BacktestConfig(
+                        starting_balance=float(balance),
+                        bet_fraction=float(bet_fraction),
+                        bet_mode=BET_MODE_LABELS[str(bet_mode_label)],
+                        fixed_bet_amount=float(fixed_bet_amount),
+                        minimum_bet_amount=1.0,
+                        confidence_threshold=float(threshold),
+                        hours_utc=tuple(int(hour) for hour in hours),
+                        days_utc=selected_days,
+                        use_cuda=str(use_cuda),
+                    ),
+                )
+                row = formatted_metrics(backtest.metrics)
+                row["model_id"] = "temporary voting ensemble"
+                row["model_label"] = "temporary voting ensemble"
+                metrics.append(row)
+                trades = backtest.trades.copy()
+                if not trades.empty:
+                    trades["model_id"] = "temporary voting ensemble"
+                    trades["model_label"] = "temporary voting ensemble"
+                    curves.append(trades[["timestamp", "equity", "model_label"]])
+                    latest_trades = pd.concat([latest_trades, trades.tail(50)], ignore_index=True)
     st.dataframe(pd.DataFrame(metrics, columns=METRIC_ORDER), use_container_width=True, hide_index=True)
     if curves:
         curve_frame = pd.concat(curves, ignore_index=True)
@@ -291,15 +510,30 @@ def render_research(paths: QuantStreamPaths) -> None:
         st.info("No global_results.parquet found for this variation.")
         return
     model_ids = model_ids_from_results(results)
+    metadata = load_model_metadata(paths, variation, model_ids)
+    label_map = model_chart_labels(paths, variation, model_ids)
+    st.subheader("Model Filters")
+    filtered_model_ids = filter_model_ids(metadata, key_prefix=f"research_{variation}")
+    if not filtered_model_ids:
+        st.info("No models match the selected filters.")
+        return
     tab_metrics, tab_backtest, tab_detail = st.tabs(["Model Comparison", "Backtest", "Model Detail"])
     with tab_metrics:
         threshold = st.slider("Metrics Signal Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
-        st.dataframe(model_metric_table(results, model_ids, threshold), use_container_width=True, hide_index=True)
+        st.dataframe(
+            model_metric_table(results, filtered_model_ids, threshold, label_map),
+            use_container_width=True,
+            hide_index=True,
+        )
     with tab_backtest:
-        render_backtest_sandbox(paths, variation, results, model_ids)
+        render_backtest_sandbox(paths, variation, results, filtered_model_ids)
     with tab_detail:
-        if model_ids:
-            selected_model = st.selectbox("Model", model_ids)
+        if filtered_model_ids:
+            selected_model = st.selectbox(
+                "Model",
+                filtered_model_ids,
+                format_func=model_label_formatter(label_map),
+            )
             render_model_detail(paths, variation, selected_model)
         else:
             st.info("No model prediction columns found.")
@@ -373,13 +607,128 @@ def render_production(paths: QuantStreamPaths) -> None:
     st.dataframe(filtered, use_container_width=True, hide_index=True)
 
 
+def render_optimization(paths: QuantStreamPaths) -> None:
+    st.header("Optimization Search")
+    if not OPTUNA_AVAILABLE:
+        st.warning("Optuna is not installed in the active Conda environment.")
+        st.code("powershell -ExecutionPolicy Bypass -File .\\setup_repo.ps1", language="powershell")
+        return
+
+    config_path_text = st.sidebar.text_input("Search Config", value=str(DEFAULT_CONFIG_PATH))
+    config_path = Path(config_path_text)
+    try:
+        config = load_search_config(config_path)
+        study = load_study(config)
+    except Exception as exc:
+        st.error(f"Could not load optimization study: {exc}")
+        return
+
+    st.caption(str(config.storage_path))
+    optuna_frame = optimization_trial_rows(study)
+    metric_rows = completed_run_metrics(paths, config) if completed_run_metrics is not None else []
+    frame = pd.DataFrame(metric_rows) if metric_rows else optuna_frame
+    counts = optuna_frame["state"].value_counts().to_dict() if not optuna_frame.empty else {}
+    columns = st.columns(5)
+    columns[0].metric("Trials", len(optuna_frame))
+    columns[1].metric("Complete", counts.get("COMPLETE", 0))
+    columns[2].metric("Failed", counts.get("FAIL", 0))
+    columns[3].metric("Running", counts.get("RUNNING", 0) + counts.get("WAITING", 0))
+    columns[4].metric("Target", config.target_trials)
+
+    st.subheader("Top 5 Production Candidates")
+    if metric_rows and top_candidate_rows is not None:
+        top = pd.DataFrame(top_candidate_rows(metric_rows, config.top_k))
+    else:
+        top = pd.DataFrame(top5_rows(study, config.top_k))
+    if not top.empty and "model_id" in top.columns:
+        model_ids = [str(model_id) for model_id in top["model_id"] if str(model_id) not in {"", "-"}]
+        label_map = model_chart_labels(paths, f"var_{config.variation_id}", model_ids)
+        top.insert(1, "model_label", [label_map.get(str(model_id), "-") for model_id in top["model_id"]])
+    st.dataframe(top, use_container_width=True, hide_index=True)
+
+    if frame.empty:
+        st.info("No optimization trials found yet.")
+        return
+
+    family_options = sorted(str(value) for value in frame["family"].dropna().unique())
+    state_options = sorted(str(value) for value in frame["state"].dropna().unique())
+    filter_columns = st.columns(2)
+    with filter_columns[0]:
+        selected_families = st.multiselect("Families", family_options, default=family_options)
+    with filter_columns[1]:
+        selected_states = st.multiselect("Trial States", state_options, default=state_options)
+    filtered = frame.loc[frame["family"].isin(selected_families) & frame["state"].isin(selected_states)].copy()
+    if "trial" in filtered.columns:
+        filtered["trial_sort"] = pd.to_numeric(filtered["trial"], errors="coerce")
+    else:
+        filtered["trial_sort"] = np.nan
+
+    complete = filtered.loc[filtered["state"] == "COMPLETE"].dropna(subset=["precision_at_threshold", "trade_density"])
+    if complete.empty:
+        st.info("No completed optimization trials match the selected filters.")
+    else:
+        st.subheader("Pareto Trial Scatter")
+        st.plotly_chart(
+            px.scatter(
+                complete,
+                x="trade_density",
+                y="precision_at_threshold",
+                color="family",
+                hover_data=[
+                    "trial",
+                    "model_id",
+                    "threshold",
+                    "original_threshold",
+                    "threshold_policy",
+                    "effective_threshold",
+                    "threshold_fallback_used",
+                    "efficiency_score",
+                    "executed_count",
+                ],
+            ),
+            use_container_width=True,
+        )
+        st.subheader("Efficiency By Trial")
+        st.plotly_chart(
+            px.line(
+                complete.sort_values(["trial_sort", "family", "model_id"], na_position="last"),
+                x="trial_sort",
+                y="efficiency_score",
+                color="family",
+                markers=True,
+                hover_data=[
+                    "trial",
+                    "model_id",
+                    "threshold",
+                    "original_threshold",
+                    "threshold_policy",
+                    "effective_threshold",
+                    "threshold_fallback_used",
+                    "executed_count",
+                ],
+            ),
+            use_container_width=True,
+        )
+
+    if metric_rows:
+        st.caption("Metrics are recalculated from completed run YAMLs and global_results.parquet.")
+    st.subheader("Trial Metrics")
+    display_frame = filtered.sort_values(["trial_sort", "family", "model_id"], na_position="last").drop(
+        columns=["trial_sort"],
+        errors="ignore",
+    )
+    st.dataframe(display_frame, use_container_width=True, hide_index=True)
+
+
 def main() -> None:
     st.set_page_config(page_title="Quant-Stream", layout="wide")
     paths = QuantStreamPaths()
     st.sidebar.title("Quant-Stream")
-    mode = st.sidebar.radio("Domain", ["Research", "Production"], index=0)
+    mode = st.sidebar.radio("Domain", ["Research", "Optimization", "Production"], index=0)
     if mode == "Research":
         render_research(paths)
+    elif mode == "Optimization":
+        render_optimization(paths)
     else:
         render_production(paths)
 

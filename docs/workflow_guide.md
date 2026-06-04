@@ -70,6 +70,41 @@ python state_sync.py --check
 
 Without `--check`, stale parquet columns and unreferenced scalers are cleaned in place.
 
+## Resumable Optimization Search
+
+Optuna search is dev-only. It generates normal run requests, waits for the folder-state runner to finish them, reads
+`data/var_X/global_results.parquet`, and stores the Pareto search state in a local SQLite file.
+
+Create or edit the local search config from the tracked example:
+
+```powershell
+Copy-Item .\automation\optimization\search_config.yaml.example .\automation\optimization\search_config.yaml
+```
+
+Then start or resume the search:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\automation\run_optimization_search.ps1
+```
+
+To continue later, increase `target_trials` in `automation/optimization/search_config.yaml` and rerun the same script.
+Stopping with `Ctrl+C` is safe: completed trials remain in SQLite, and the current Top 5 candidate file is refreshed.
+
+The optimizer never copies models into `models/prod/`. It writes production candidates only:
+
+```text
+automation/optimization/[study_name]_top5.yaml
+```
+
+The default ranking is `precision_at_threshold * trade_density`, where precision is measured only for predictions with
+probability above the configured threshold and trade density is `ln(executed_count + 1)`.
+
+View optimization metrics in the main dashboard by selecting `Optimization` in the sidebar:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\automation\run_dashboard.ps1
+```
+
 ## Remote Readiness
 
 Azure and MLflow are disabled in `automation/config.yaml` for now:

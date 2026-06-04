@@ -12,6 +12,8 @@ class RandomForestModelSpec:
     max_depth: int = 10
     min_samples_leaf: int = 5
     n_jobs: int = -1
+    device: str = "auto"
+    n_streams: int = 4
 
 
 def validate_hyperparameters(hyperparameters: dict[str, Any]) -> RandomForestModelSpec:
@@ -20,6 +22,8 @@ def validate_hyperparameters(hyperparameters: dict[str, Any]) -> RandomForestMod
         max_depth=int(hyperparameters.get("max_depth", 10)),
         min_samples_leaf=int(hyperparameters.get("min_samples_leaf", 5)),
         n_jobs=int(hyperparameters.get("n_jobs", -1)),
+        device=str(hyperparameters.get("device", "auto")),
+        n_streams=int(hyperparameters.get("n_streams", 4)),
     )
 
 
