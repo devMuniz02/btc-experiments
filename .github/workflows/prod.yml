@@ -1,0 +1,41 @@
+name: prod
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      max_markets:
+        default: "100"
+        required: true
+        description: "Maximum production markets to process in this run"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: quant-prod-single-market
+  cancel-in-progress: false
+
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python scripts/pull_private_src.py --required --clean
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_REPO_ID: ${{ secrets.HF_REPO_ID }}
+          HF_REPO_TYPE: ${{ vars.HF_REPO_TYPE || 'model' }}
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - run: python scripts/run_prod_workflow.py --push-github --push-hf --max-markets "${{ inputs.max_markets || '100' }}"
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_REPO_ID: ${{ secrets.HF_REPO_ID }}
+          HF_REPO_TYPE: ${{ vars.HF_REPO_TYPE || 'model' }}

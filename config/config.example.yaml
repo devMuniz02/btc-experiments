@@ -1,0 +1,78 @@
+project:
+  name: quant_ml_platform
+  public_delay_hours: 24
+  default_seed: 42
+
+current_phase: none
+
+market:
+  market_id: btc_1h
+  market_type: crypto
+  symbol: BTCUSDT
+  exchange: binance
+  timeframe: 1h
+  market_hours_mode: full_time
+
+fetch:
+  enabled: true
+  provider_priority: [binance, binance_futures, binanceus, kraken, okx, kucoin, bitfinex]
+  start: null
+  end: null
+  max_retries: 3
+  retry_backoff_seconds: 5
+  cache_policy: append
+
+schema:
+  timestamp_column: timestamp
+  open_column: open
+  high_column: high
+  low_column: low
+  close_column: close
+  volume_column: volume
+
+split:
+  train_length: 500
+  validation_length: 300
+  test_length: 300
+  method: chronological
+
+features:
+  feature_set: basic_v1
+  use_returns: true
+  use_log_returns: true
+  use_rolling_stats: true
+  use_volatility: true
+  use_calendar: true
+
+experiments:
+  test_end_utc: "2026-05-31T23:59:59+00:00"
+  workflow_profile: exhaustive_v1
+  phases: [phase01, phase02, phase03, phase04, phase05, phase06, phase07, phase08, phase09, phase10, phase11, phase12, phase13, phase14, phase15, phase16]
+  models: [naive_direction, logistic_regression, random_forest, gradient_boosting, xgboost, lightgbm, mlp, nn, centroid, lstm, gru, transformer, tcn, mamba, state_space, bc, dagger, ppo, actor_critic]
+  denoising: [none, rolling_mean, ema]
+  ensembles: [none, soft_vote, hard_vote, stacked_logistic]
+  sequence_lengths: [24, 48]
+  ranking_metric: balanced_accuracy
+  phase5_to_phase6_inheritance: fixed
+  post_lock_sliding_windows: 10
+  post_lock_sliding_window_size: 300
+  min_trade_count: 20
+
+production:
+  start_utc: "2026-06-01T00:00:00+00:00"
+  enabled: true
+  schedule: daily
+  use_public_delay: true
+  drift_check: true
+  retrain_on_drift: true
+  top_k: 3
+  drift_trigger: critical
+  drift_window_length: 300
+  shadow_models: true
+
+reporting:
+  public_enabled: true
+  private_enabled: true
+  update_readme: true
+  update_pages: true
+  anonymize_public: true
