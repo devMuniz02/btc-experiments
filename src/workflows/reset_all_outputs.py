@@ -123,32 +123,49 @@ def _clear_directory_contents(path: Path) -> None:
             child.unlink()
 
 
+def _git_stdout(root: Path, command: list[str], *, check: bool = True) -> str:
+    result = subprocess.run(command, cwd=root, check=check, capture_output=True, text=True)
+    return result.stdout.strip()
+
+
+def _copy_git_identity(source_root: Path, target_root: Path) -> None:
+    name = _git_stdout(source_root, ["git", "config", "--get", "user.name"], check=False)
+    email = _git_stdout(source_root, ["git", "config", "--get", "user.email"], check=False)
+    subprocess.run(["git", "config", "user.name", name or "github-actions[bot]"], cwd=target_root, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", email or "41898282+github-actions[bot]@users.noreply.github.com"],
+        cwd=target_root,
+        check=True,
+    )
+
+
 def reset_remote_branch(root: Path, *, branch: str, dry_run: bool = False) -> dict[str, Any]:
     branch = validate_branch_name(branch)
     files = _reset_branch_files(branch)
     if dry_run:
         return {"branch": branch, "files": sorted(files), "status": "planned"}
 
-    with tempfile.TemporaryDirectory(prefix=f"reset-{branch.replace('/', '-')}-") as tmp:
-        worktree = Path(tmp) / "worktree"
-        subprocess.run(["git", "worktree", "add", "--detach", str(worktree), "HEAD"], cwd=root, check=True)
-        try:
-            subprocess.run(["git", "switch", "--orphan", branch], cwd=worktree, check=True)
-            subprocess.run(["git", "rm", "-r", "--cached", "."], cwd=worktree, check=False)
-            _clear_directory_contents(worktree)
-            for relative, text in files.items():
-                target = worktree / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(text, encoding="utf-8")
-            subprocess.run(["git", "add", "-A"], cwd=worktree, check=True)
-            subprocess.run(["git", "commit", "-m", f"Reset {branch} outputs"], cwd=worktree, check=True)
-            fetch = subprocess.run(["git", "fetch", "origin", branch], cwd=root)
-            push = ["git", "push", "--force", "origin", f"{branch}:{branch}"]
-            if fetch.returncode == 0:
-                push = ["git", "push", "--force-with-lease", "origin", f"{branch}:{branch}"]
-            subprocess.run(push, cwd=worktree, check=True)
-        finally:
-            subprocess.run(["git", "worktree", "remove", "--force", str(worktree)], cwd=root, check=False)
+    tmp_parent = root / "tmp"
+    tmp_parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f"reset-{branch.replace('/', '-')}-", dir=tmp_parent) as tmp:
+        reset_repo = Path(tmp) / "repo"
+        remote_url = _git_stdout(root, ["git", "remote", "get-url", "origin"])
+        subprocess.run(["git", "init", str(reset_repo)], cwd=root, check=True)
+        subprocess.run(["git", "remote", "add", "origin", remote_url], cwd=reset_repo, check=True)
+        _copy_git_identity(root, reset_repo)
+        reset_branch = f"reset-{os.getpid()}-{branch.replace('/', '-')}"
+        subprocess.run(["git", "checkout", "--orphan", reset_branch], cwd=reset_repo, check=True)
+        for relative, text in files.items():
+            target = reset_repo / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=reset_repo, check=True)
+        subprocess.run(["git", "commit", "-m", f"Reset {branch} outputs"], cwd=reset_repo, check=True)
+        fetch = subprocess.run(["git", "fetch", "origin", branch], cwd=reset_repo)
+        push = ["git", "push", "--force", "origin", f"HEAD:{branch}"]
+        if fetch.returncode == 0:
+            push = ["git", "push", "--force-with-lease", "origin", f"HEAD:{branch}"]
+        subprocess.run(push, cwd=reset_repo, check=True)
     return {"branch": branch, "files": sorted(files), "status": "reset"}
 
 

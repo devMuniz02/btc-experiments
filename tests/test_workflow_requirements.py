@@ -39,7 +39,13 @@ from src.workflows.orchestrate_prod import _ensure_anonymized_dataset_marker, _p
 from src.workflows.update_pages import _plot, update_pages
 from src.workflows.update_readme import END_MARKER, START_MARKER, update_readme
 from scripts.reset_market import delete_hf_paths, hf_reset_paths, local_reset_paths, reset_market
-from src.workflows.reset_all_outputs import delete_hf_outputs, hf_output_paths, local_output_paths, reset_all_outputs
+from src.workflows.reset_all_outputs import (
+    delete_hf_outputs,
+    hf_output_paths,
+    local_output_paths,
+    reset_all_outputs,
+    reset_remote_branch,
+)
 
 
 def _require_private_training() -> None:
@@ -1441,6 +1447,41 @@ def test_reset_all_outputs_delete_local_is_opt_in(tmp_path: Path) -> None:
     assert result["deleted_local_paths"]
     assert not (tmp_path / "experiments").exists()
     assert not (tmp_path / "prod").exists()
+
+
+def test_reset_remote_branch_ignores_existing_local_branch_name(tmp_path: Path) -> None:
+    origin = tmp_path / "origin.git"
+    repo = tmp_path / "repo"
+
+    def git(cwd: Path, *args: str) -> str:
+        return hf_state.subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git(tmp_path, "init", "--bare", str(origin))
+    git(tmp_path, "init", str(repo))
+    git(repo, "config", "user.name", "Test Bot")
+    git(repo, "config", "user.email", "bot@example.test")
+    (repo / "README.md").write_text("# code\n", encoding="utf-8")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "Initial code")
+    git(repo, "branch", "-M", "main")
+    git(repo, "remote", "add", "origin", str(origin))
+    git(repo, "push", "origin", "main:main")
+    git(repo, "branch", "experiments")
+    git(repo, "push", "origin", "main:experiments")
+
+    result = reset_remote_branch(repo, branch="experiments")
+
+    git(repo, "fetch", "origin", "experiments")
+    tree = git(repo, "ls-tree", "-r", "--name-only", "origin/experiments").splitlines()
+    assert result["status"] == "reset"
+    assert tree == ["README.md"]
+    assert "experiments outputs reset" in git(repo, "show", "origin/experiments:README.md")
 
 
 def test_reset_all_outputs_batches_hf_deletes() -> None:
