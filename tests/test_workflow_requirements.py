@@ -1354,15 +1354,24 @@ def test_reset_all_outputs_dry_run_deletes_nothing(tmp_path: Path) -> None:
 
     assert result["market"] == "all"
     assert result["deleted_local_paths"] == []
-    assert all(Path(path).exists() for path in result["local_paths"])
+    assert result["branch_resets"] == [
+        {"branch": "experiments", "files": ["README.md"], "status": "planned"},
+        {"branch": "gh-pages", "files": [".nojekyll", "index.html"], "status": "planned"},
+    ]
+    assert all(path.exists() for path in local_output_paths(tmp_path, cache_root=tmp_path / "private_hf_cache"))
 
 
-def test_reset_all_outputs_force_deletes_generated_roots_and_regenerates_pages(tmp_path: Path) -> None:
+def test_reset_all_outputs_force_resets_artifact_branches_without_touching_main_checkout(tmp_path: Path) -> None:
     for path in local_output_paths(tmp_path, cache_root=tmp_path / "private_hf_cache"):
         path.mkdir(parents=True, exist_ok=True)
         (path / "state.txt").write_text("generated", encoding="utf-8")
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "config.example.yaml").write_text("project:\n  name: keep\n", encoding="utf-8")
+    calls = []
+
+    def fake_reset_branch(root: Path, *, branch: str, dry_run: bool):
+        calls.append((root, branch, dry_run))
+        return {"branch": branch, "files": ["placeholder"], "status": "reset"}
 
     result = reset_all_outputs(
         root=tmp_path,
@@ -1371,13 +1380,35 @@ def test_reset_all_outputs_force_deletes_generated_roots_and_regenerates_pages(t
         dry_run=False,
         force=True,
         local_only=True,
+        reset_branch_func=fake_reset_branch,
+    )
+
+    assert result["deleted_local_paths"] == []
+    assert calls == [(tmp_path, "experiments", False), (tmp_path, "gh-pages", False)]
+    assert (tmp_path / "experiments").exists()
+    assert (tmp_path / "prod").exists()
+    assert (tmp_path / "config" / "config.example.yaml").exists()
+
+
+def test_reset_all_outputs_delete_local_is_opt_in(tmp_path: Path) -> None:
+    for path in local_output_paths(tmp_path, cache_root=tmp_path / "private_hf_cache"):
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "state.txt").write_text("generated", encoding="utf-8")
+
+    result = reset_all_outputs(
+        root=tmp_path,
+        cache_root=tmp_path / "private_hf_cache",
+        client=None,
+        dry_run=False,
+        force=True,
+        local_only=True,
+        reset_branches=False,
+        delete_local=True,
     )
 
     assert result["deleted_local_paths"]
     assert not (tmp_path / "experiments").exists()
     assert not (tmp_path / "prod").exists()
-    assert (tmp_path / "config" / "config.example.yaml").exists()
-    assert (tmp_path / "docs" / "index.html").exists()
 
 
 def test_reset_all_outputs_batches_hf_deletes() -> None:
