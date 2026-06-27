@@ -18,13 +18,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Pull artifact branches
+        run: |
+          git fetch origin experiments --depth=1 || true
+          git fetch origin prod --depth=1 || true
+          git checkout origin/experiments -- experiments 2>/dev/null || true
+          git checkout origin/prod -- prod 2>/dev/null || true
       - run: python src/workflows/update_readme.py
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git restore --staged --worktree experiments prod 2>/dev/null || true
           git add README.md
           if git diff --cached --quiet; then
             echo "README is already current."

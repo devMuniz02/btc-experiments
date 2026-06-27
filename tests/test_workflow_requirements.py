@@ -323,11 +323,21 @@ def test_phase_completion_triggers_reporting_and_final_production() -> None:
     prod = Path(".github/workflows/prod.yml").read_text(encoding="utf-8")
 
     assert "phase_completed" in experiments
+    assert "--github-branch experiments" in experiments
     assert "gh workflow run pages-update.yml" in experiments
+    assert "gh workflow run pages-update.yml --ref main" in experiments
     assert "gh workflow run readme-update.yml" in experiments
+    assert "gh workflow run readme-update.yml --ref main" in experiments
     assert "workflow_done" in experiments
     assert 'completed_phase in {"phase16", "16"}' in experiments
     assert "gh workflow run prod.yml" in experiments
+    assert "--github-branch prod" in prod
+    assert "git switch --orphan gh-pages" in pages
+    assert "git push origin gh-pages" in pages
+    assert "git checkout origin/experiments -- experiments" in pages
+    assert "git checkout origin/prod -- prod" in pages
+    assert "git checkout origin/experiments -- experiments" in readme
+    assert "git checkout origin/prod -- prod" in readme
     assert 'workflows: ["prod"]' in pages
     assert 'workflows: ["prod"]' in readme
     assert 'cron: "17 6 * * *"' in prod

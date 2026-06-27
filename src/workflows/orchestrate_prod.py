@@ -92,6 +92,7 @@ def run_prod_workflow(
     token: str,
     repo_type: str,
     push_github: bool,
+    github_branch: str | None,
     push_hf: bool,
     max_markets: int,
 ) -> dict[str, Any]:
@@ -135,9 +136,10 @@ def run_prod_workflow(
             }
             github_push = explicit_git_push(
                 root=root,
-                paths=[f"prod/{market_id}", f"experiments/{market_id}", "docs", "README.md"],
+                paths=[f"prod/{market_id}"],
                 message=f"Update anonymized production artifacts for {market_id}",
                 enabled=push_github,
+                target_branch=github_branch,
             )
             hf_results: list[tuple[Path, str]] = [(local_config, f"{MARKETS_ROOT}/{market_id}.yaml")]
             if prediction_path.exists():
@@ -178,6 +180,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--token", default="")
     parser.add_argument("--repo-type", default=os.environ.get("HF_REPO_TYPE", "model"), choices=["model", "dataset", "space"])
     parser.add_argument("--push-github", action="store_true")
+    parser.add_argument("--github-branch", default=os.environ.get("GITHUB_ARTIFACT_BRANCH", ""))
     parser.add_argument("--push-hf", action="store_true")
     parser.add_argument("--max-markets", type=int, default=100)
     return parser.parse_args()
@@ -192,6 +195,7 @@ def main() -> int:
         token=str(args.token),
         repo_type=str(args.repo_type),
         push_github=bool(args.push_github),
+        github_branch=str(args.github_branch or ""),
         push_hf=bool(args.push_hf),
         max_markets=int(args.max_markets),
     )

@@ -28,6 +28,9 @@ jobs:
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -40,7 +43,7 @@ jobs:
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      - run: python scripts/run_experiments_workflow.py --push-github --push-hf --max-requests "${{ inputs.max_requests || '25' }}" --result-file private_hf_cache/experiment-result.json
+      - run: python scripts/run_experiments_workflow.py --push-github --github-branch experiments --push-hf --max-requests "${{ inputs.max_requests || '25' }}" --result-file private_hf_cache/experiment-result.json
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_REPO_ID: ${{ secrets.HF_REPO_ID }}
@@ -77,16 +80,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run pages-update.yml --ref "${{ github.ref_name }}"
-          gh workflow run readme-update.yml --ref "${{ github.ref_name }}"
+          gh workflow run pages-update.yml --ref main
+          gh workflow run readme-update.yml --ref main
       - name: Start production after phase 16
         if: ${{ steps.result.outputs.workflow_done == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run prod.yml --ref "${{ github.ref_name }}" -f max_markets=100
+        run: gh workflow run prod.yml --ref main -f max_markets=100
       - name: Dispatch next experiment run
         if: ${{ steps.result.outputs.should_continue == 'true' && ((github.event_name == 'workflow_dispatch' && inputs.auto_continue == 'true') || github.event_name == 'schedule') }}
         env:
           GH_TOKEN: ${{ github.token }}
           MAX_REQUESTS: ${{ inputs.max_requests || '25' }}
-        run: gh workflow run experiments.yml --ref "${{ github.ref_name }}" -f max_requests="$MAX_REQUESTS" -f auto_continue=true
+        run: gh workflow run experiments.yml --ref main -f max_requests="$MAX_REQUESTS" -f auto_continue=true

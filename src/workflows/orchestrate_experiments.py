@@ -807,6 +807,7 @@ def run_experiment_workflow(
     token: str,
     repo_type: str,
     push_github: bool,
+    github_branch: str | None,
     push_hf: bool,
     max_requests: int,
 ) -> dict[str, Any]:
@@ -967,9 +968,10 @@ def run_experiment_workflow(
         if batch_results:
             github_push = explicit_git_push(
                 root=root,
-                paths=[f"experiments/{market_id}", f"prod/{market_id}", "docs", "README.md"],
+                paths=[f"experiments/{market_id}"],
                 message=f"Update anonymized experiment artifacts for {market_id} {current} batch",
                 enabled=push_github,
+                target_branch=github_branch,
             )
             github_artifacts_saved = github_push["status"] == "pushed" or (
                 push_github and github_push["status"] == "skipped" and github_push.get("reason") == "no staged changes"
@@ -1029,6 +1031,7 @@ def run_experiment_workflow(
                     paths=[f"experiments/{market_id}/results/phase_results_public.json"],
                     message=f"Select anonymized {market_id} {current} results",
                     enabled=push_github,
+                    target_branch=github_branch,
                 )
             current, generated, done = _advance_completed_phase(
                 client,
@@ -1073,6 +1076,7 @@ def parse_args() -> argparse.Namespace:
         "--repo-type", default=os.environ.get("HF_REPO_TYPE", "model"), choices=["model", "dataset", "space"]
     )
     parser.add_argument("--push-github", action="store_true")
+    parser.add_argument("--github-branch", default=os.environ.get("GITHUB_ARTIFACT_BRANCH", ""))
     parser.add_argument("--push-hf", action="store_true")
     parser.add_argument("--max-requests", type=int, default=100)
     parser.add_argument("--result-file", default="", help="Optional path for machine-readable workflow result JSON.")
@@ -1088,6 +1092,7 @@ def main() -> int:
         token=str(args.token),
         repo_type=str(args.repo_type),
         push_github=bool(args.push_github),
+        github_branch=str(args.github_branch or ""),
         push_hf=bool(args.push_hf),
         max_requests=int(args.max_requests),
     )

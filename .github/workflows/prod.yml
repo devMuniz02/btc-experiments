@@ -22,6 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -34,7 +37,7 @@ jobs:
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      - run: python scripts/run_prod_workflow.py --push-github --push-hf --max-markets "${{ inputs.max_markets || '100' }}"
+      - run: python scripts/run_prod_workflow.py --push-github --github-branch prod --push-hf --max-markets "${{ inputs.max_markets || '100' }}"
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_REPO_ID: ${{ secrets.HF_REPO_ID }}

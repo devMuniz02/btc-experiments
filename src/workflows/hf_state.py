@@ -228,12 +228,18 @@ def _current_branch(root: Path) -> str:
     return branch
 
 
-def _push_with_rebase_retry(root: Path) -> dict[str, Any]:
-    first_push = subprocess.run(["git", "push"], cwd=root)
-    if first_push.returncode == 0:
-        return {"push_attempts": 1, "rebased": False}
+def _push_command(root: Path, target_branch: str | None) -> list[str]:
+    if target_branch:
+        return ["git", "push", "origin", f"HEAD:{target_branch}"]
+    return ["git", "push"]
 
-    branch = _current_branch(root)
+
+def _push_with_rebase_retry(root: Path, target_branch: str | None = None) -> dict[str, Any]:
+    first_push = subprocess.run(_push_command(root, target_branch), cwd=root)
+    if first_push.returncode == 0:
+        return {"push_attempts": 1, "rebased": False, "branch": target_branch or _current_branch(root)}
+
+    branch = target_branch or _current_branch(root)
     subprocess.run(["git", "fetch", "origin", branch], cwd=root, check=True)
     try:
         # During rebase, "theirs" is the commit being replayed. Generated public
@@ -242,7 +248,7 @@ def _push_with_rebase_retry(root: Path) -> dict[str, Any]:
     except subprocess.CalledProcessError:
         subprocess.run(["git", "rebase", "--abort"], cwd=root)
         raise
-    subprocess.run(["git", "push"], cwd=root, check=True)
+    subprocess.run(_push_command(root, target_branch), cwd=root, check=True)
     return {"push_attempts": 2, "rebased": True, "branch": branch}
 
 
@@ -252,6 +258,7 @@ def explicit_git_push(
     paths: list[str],
     message: str,
     enabled: bool,
+    target_branch: str | None = None,
 ) -> dict[str, Any]:
     if not enabled:
         return {"status": "skipped", "reason": "push_github flag not set"}
@@ -272,5 +279,5 @@ def explicit_git_push(
     if diff.returncode == 0:
         return {"status": "skipped", "reason": "no staged changes"}
     subprocess.run(["git", "commit", "-m", message], cwd=root, check=True)
-    push_result = _push_with_rebase_retry(root)
+    push_result = _push_with_rebase_retry(root, target_branch=target_branch)
     return {"status": "pushed", "paths": existing, "message": message, **push_result}
