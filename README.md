@@ -39,7 +39,7 @@ The public pages intentionally show only market ids, numbered phases, anonymized
 
 | Market | Phase progress | Top validation BA |
 |---|---:|---:|
-| btc_1h | 3/16 | 0.6669 |
+| btc_1h | 4/16 | 0.6669 |
 
 ### Production
 
