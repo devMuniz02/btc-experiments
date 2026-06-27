@@ -4,12 +4,57 @@ import argparse
 import json
 import os
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
 
 def _value(explicit: str, env_name: str) -> str:
     return (explicit or os.environ.get(env_name, "")).strip()
+
+
+def _retry_after_seconds(exc: Exception, default: float) -> float:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", {}) or {}
+    raw = headers.get("retry-after") or headers.get("Retry-After")
+    if raw:
+        try:
+            return max(float(raw), default)
+        except ValueError:
+            return default
+    return default
+
+
+def _with_hf_retries(action, *, attempts: int = 4, base_sleep: float = 20.0):
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return action()
+        except Exception as exc:  # huggingface_hub wraps 429s in version-specific exception classes.
+            message = str(exc)
+            if "429" not in message and "Too Many Requests" not in message:
+                raise
+            last_error = exc
+            if attempt == attempts:
+                break
+            time.sleep(_retry_after_seconds(exc, base_sleep * attempt))
+    assert last_error is not None
+    raise last_error
+
+
+def _list_private_source_files(api: Any, *, repo_id: str, repo_type: str, prefix: str) -> list[str]:
+    def list_prefix() -> list[str]:
+        entries = api.list_repo_tree(
+            repo_id=repo_id,
+            repo_type=repo_type,
+            path_in_repo=prefix,
+            recursive=True,
+            expand=False,
+        )
+        paths = [str(getattr(entry, "path", "")).strip("/") for entry in entries]
+        return sorted(path for path in paths if path and (path == prefix or path.startswith(f"{prefix}/")))
+
+    return _with_hf_retries(list_prefix)
 
 
 def pull_private_src(
@@ -33,11 +78,7 @@ def pull_private_src(
     from huggingface_hub import HfApi, hf_hub_download
 
     api = HfApi(token=token)
-    files = sorted(
-        path
-        for path in api.list_repo_files(repo_id=repo_id, repo_type=repo_type)
-        if path == prefix or path.startswith(f"{prefix}/")
-    )
+    files = _list_private_source_files(api, repo_id=repo_id, repo_type=repo_type, prefix=prefix)
     if not files:
         if required:
             raise RuntimeError(f"No private source files found in HF repo under {prefix!r}.")
@@ -54,7 +95,14 @@ def pull_private_src(
     for hf_path in files:
         if hf_path.endswith("/"):
             continue
-        downloaded = hf_hub_download(repo_id=repo_id, repo_type=repo_type, token=token, filename=hf_path)
+        downloaded = _with_hf_retries(
+            lambda hf_path=hf_path: hf_hub_download(
+                repo_id=repo_id,
+                repo_type=repo_type,
+                token=token,
+                filename=hf_path,
+            )
+        )
         local_path = (root / hf_path).resolve()
         if root_resolved not in (local_path, *local_path.parents):
             raise RuntimeError(f"Refusing to write outside repository root: {hf_path}")

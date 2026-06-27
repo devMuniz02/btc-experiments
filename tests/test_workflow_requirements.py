@@ -5,7 +5,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from scripts.pull_private_src import pull_private_src
+from scripts.pull_private_src import _list_private_source_files, pull_private_src
 import pytest
 
 try:
@@ -858,6 +858,38 @@ def test_private_source_pull_requires_hf_credentials(tmp_path: Path) -> None:
         raise AssertionError("required private source pull should fail without HF credentials")
     except RuntimeError as exc:
         assert "HF_TOKEN" in str(exc)
+
+
+def test_private_source_pull_lists_only_requested_prefix() -> None:
+    class Entry:
+        def __init__(self, path: str) -> None:
+            self.path = path
+
+    class FakeApi:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def list_repo_tree(self, **kwargs):
+            self.calls.append(kwargs)
+            return [
+                Entry("src/private/training/pipeline.py"),
+                Entry("src/private/training/trainer.py"),
+            ]
+
+    api = FakeApi()
+
+    files = _list_private_source_files(api, repo_id="owner/repo", repo_type="model", prefix="src/private")
+
+    assert files == ["src/private/training/pipeline.py", "src/private/training/trainer.py"]
+    assert api.calls == [
+        {
+            "repo_id": "owner/repo",
+            "repo_type": "model",
+            "path_in_repo": "src/private",
+            "recursive": True,
+            "expand": False,
+        }
+    ]
 
 
 def test_readme_is_public_showcase_without_setup_commands() -> None:
