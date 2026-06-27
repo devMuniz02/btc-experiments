@@ -24,7 +24,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -r requirements.txt
       - name: Pull artifact branches
         run: |
           git fetch origin experiments --depth=1 || true
