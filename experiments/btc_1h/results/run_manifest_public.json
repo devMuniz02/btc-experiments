@@ -1,5 +1,5 @@
 {
-  "config_hash": "679be54358c3b679848754da63fff311fdb02434b7d31a28c3183bc3ee9d847d",
+  "config_hash": "c417c93600ab06d9bb4a4b06ba437c7eebe5c928a6b30392b1ebe7a2f04ea7f3",
   "deployment": {
     "export_format": "json_bundle",
     "private_hf_required": true,
@@ -7,9 +7,9 @@
     "public_safe": false
   },
   "discovery_phases": {
-    "phase02": "request_completed"
+    "phase03": "request_completed"
   },
-  "drift_cache_key": "3958bac75bb82659c2f444066148ce50cd5a13f24daf5f130ec3e8891bab6d4b",
+  "drift_cache_key": "9f188f09a68564344083feb6a1855e3b3bf34efb81333352f7d32834ba28e35e",
   "hardware_profile": {
     "cpu_available": true,
     "cpu_count": 4,
