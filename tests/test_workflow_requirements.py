@@ -1714,6 +1714,32 @@ def test_artifact_branch_push_copies_checkout_auth_config(tmp_path: Path) -> Non
     )
 
 
+def test_git_auth_copy_error_does_not_leak_secret(tmp_path: Path, monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    class FakeCompleted:
+        def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def fake_run(command, **kwargs):
+        calls.append(list(command))
+        if command == ["git", "config", "--local", "--get-regexp", r"http\..*\.extraheader"]:
+            return FakeCompleted(stdout="http.https://github.com/.extraheader AUTHORIZATION: basic SECRET_TOKEN\n")
+        if command[:3] == ["git", "config", "--local"] and "AUTHORIZATION: basic SECRET_TOKEN" in command:
+            return FakeCompleted(returncode=1)
+        return FakeCompleted(stdout="")
+
+    monkeypatch.setattr(hf_state.subprocess, "run", fake_run)
+
+    try:
+        hf_state._copy_git_auth_config(tmp_path, tmp_path)
+        raise AssertionError("auth config copy should fail")
+    except RuntimeError as exc:
+        assert "SECRET_TOKEN" not in str(exc)
+        assert "http.https://github.com/.extraheader" in str(exc)
+
+
 def test_git_push_aborts_failed_rebase_retry(tmp_path: Path, monkeypatch) -> None:
     calls: list[list[str]] = []
 

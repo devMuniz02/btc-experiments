@@ -316,7 +316,14 @@ def _copy_git_auth_config(source_root: Path, target_root: Path) -> None:
             if not line.strip() or " " not in line:
                 continue
             key, value = line.split(" ", 1)
-            subprocess.run(["git", "config", "--local", key, value], cwd=target_root, check=True)
+            result = subprocess.run(
+                ["git", "config", "--local", key, value],
+                cwd=target_root,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"Failed to copy git auth config key {key!r} into artifact repo.")
 
 
 def _push_artifact_branch(root: Path, *, paths: list[str], message: str, target_branch: str) -> dict[str, Any]:
