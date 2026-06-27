@@ -868,8 +868,10 @@ def test_private_source_pull_requires_hf_credentials(tmp_path: Path) -> None:
 
 def test_private_source_pull_lists_only_requested_prefix() -> None:
     class Entry:
-        def __init__(self, path: str) -> None:
+        def __init__(self, path: str, *, is_file: bool = True) -> None:
             self.path = path
+            if is_file:
+                self.size = 1
 
     class FakeApi:
         def __init__(self) -> None:
@@ -878,6 +880,7 @@ def test_private_source_pull_lists_only_requested_prefix() -> None:
         def list_repo_tree(self, **kwargs):
             self.calls.append(kwargs)
             return [
+                Entry("src/private/training", is_file=False),
                 Entry("src/private/training/pipeline.py"),
                 Entry("src/private/training/trainer.py"),
             ]

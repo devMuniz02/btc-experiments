@@ -51,7 +51,7 @@ def _list_private_source_files(api: Any, *, repo_id: str, repo_type: str, prefix
             recursive=True,
             expand=False,
         )
-        paths = [str(getattr(entry, "path", "")).strip("/") for entry in entries]
+        paths = [str(getattr(entry, "path", "")).strip("/") for entry in entries if hasattr(entry, "size")]
         return sorted(path for path in paths if path and (path == prefix or path.startswith(f"{prefix}/")))
 
     return _with_hf_retries(list_prefix)
