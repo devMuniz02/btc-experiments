@@ -174,24 +174,24 @@ Train-validation gap: 0.1278
 
 Candidates evaluated: 20
 
-## Phase 7
+## Phase 8
 
-Passed variation: E_2a5e72068cb0
+Passed variation: E_c3618577f48f
 
 Decision: Current best
 
 Reason: highest validation direction accuracy so far.
 
-Validation balanced accuracy: 0.6494
+Validation balanced accuracy: 0.7249
 
-Validation direction accuracy: 0.7233
+Validation direction accuracy: 0.7767
 
-Validation MCC: 0.3159
+Validation MCC: 0.4606
 
-Validation weighted score: 0.4937
+Validation weighted score: 0.5543
 
-Test balanced accuracy: 0.6555
+Test balanced accuracy: 0.6566
 
-Train-validation gap: 0.0710
+Train-validation gap: 0.0433
 
-Candidates evaluated: 1
+Candidates evaluated: 84
