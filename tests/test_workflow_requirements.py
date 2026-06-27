@@ -330,10 +330,11 @@ def test_phase_completion_triggers_reporting_and_final_production() -> None:
 
     assert "phase_completed" in experiments
     assert "--github-branch experiments" in experiments
-    assert "gh workflow run pages-update.yml" in experiments
-    assert "gh workflow run pages-update.yml --ref main" in experiments
-    assert "gh workflow run readme-update.yml" in experiments
-    assert "gh workflow run readme-update.yml --ref main" in experiments
+    assert 'dispatch_optional pages-update.yml' in experiments
+    assert 'dispatch_optional readme-update.yml' in experiments
+    assert 'gh workflow run "$workflow" --ref main' in experiments
+    assert "disabled workflow" in experiments
+    assert "::warning title=Workflow dispatch skipped::" in experiments
     assert "workflow_done" in experiments
     assert 'completed_phase in {"phase16", "16"}' in experiments
     assert "gh workflow run prod.yml" in experiments

@@ -83,8 +83,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run pages-update.yml --ref main
-          gh workflow run readme-update.yml --ref main
+          dispatch_optional() {
+            workflow="$1"
+            output="$(gh workflow run "$workflow" --ref main 2>&1)" && return 0
+            if printf '%s' "$output" | grep -qi "disabled workflow"; then
+              echo "::warning title=Workflow dispatch skipped::$workflow is disabled; enable it in GitHub Actions to allow automatic reporting updates."
+              return 0
+            fi
+            printf '%s\n' "$output" >&2
+            return 1
+          }
+          dispatch_optional pages-update.yml
+          dispatch_optional readme-update.yml
       - name: Start production after phase 16
         if: ${{ steps.result.outputs.workflow_done == 'true' }}
         env:
