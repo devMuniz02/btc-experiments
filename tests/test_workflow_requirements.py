@@ -1690,6 +1690,30 @@ def test_artifact_branch_push_keeps_only_artifact_root(tmp_path: Path) -> None:
     assert tree == ["experiments/btc_1h/result.json"]
 
 
+def test_artifact_branch_push_copies_checkout_auth_config(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+
+    def git(cwd: Path, *args: str) -> str:
+        return hf_state.subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git(tmp_path, "init", str(source))
+    git(tmp_path, "init", str(target))
+    git(source, "config", "--local", "http.https://github.com/.extraheader", "AUTHORIZATION: basic test")
+
+    hf_state._copy_git_auth_config(source, target)
+
+    assert git(target, "config", "--local", "--get", "http.https://github.com/.extraheader") == (
+        "AUTHORIZATION: basic test"
+    )
+
+
 def test_git_push_aborts_failed_rebase_retry(tmp_path: Path, monkeypatch) -> None:
     calls: list[list[str]] = []
 

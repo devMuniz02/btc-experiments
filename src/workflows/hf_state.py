@@ -303,6 +303,22 @@ def _copy_git_identity(source_root: Path, target_root: Path) -> None:
     )
 
 
+def _copy_git_auth_config(source_root: Path, target_root: Path) -> None:
+    patterns = [
+        r"http\..*\.extraheader",
+        r"url\..*\.insteadOf",
+        r"credential\..*",
+        r"credential\.helper",
+    ]
+    for pattern in patterns:
+        output = _git_stdout(source_root, ["git", "config", "--local", "--get-regexp", pattern], check=False)
+        for line in output.splitlines():
+            if not line.strip() or " " not in line:
+                continue
+            key, value = line.split(" ", 1)
+            subprocess.run(["git", "config", "--local", key, value], cwd=target_root, check=True)
+
+
 def _push_artifact_branch(root: Path, *, paths: list[str], message: str, target_branch: str) -> dict[str, Any]:
     allowed_roots = {_safe_relative_path(path).parts[0] for path in paths}
     tmp_parent = root / "tmp"
@@ -313,6 +329,7 @@ def _push_artifact_branch(root: Path, *, paths: list[str], message: str, target_
         subprocess.run(["git", "init", str(artifact_repo)], cwd=root, check=True)
         subprocess.run(["git", "remote", "add", "origin", remote_url], cwd=artifact_repo, check=True)
         _copy_git_identity(root, artifact_repo)
+        _copy_git_auth_config(root, artifact_repo)
         fetch = subprocess.run(["git", "fetch", "origin", target_branch], cwd=artifact_repo)
         if fetch.returncode == 0:
             subprocess.run(["git", "checkout", "--detach", "FETCH_HEAD"], cwd=artifact_repo, check=True)
