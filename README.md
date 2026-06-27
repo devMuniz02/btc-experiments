@@ -37,7 +37,9 @@ The public pages intentionally show only market ids, numbered phases, anonymized
 
 ### Experiments
 
-No public experiment results yet.
+| Market | Phase progress | Top validation BA |
+|---|---:|---:|
+| btc_1h | 1/16 | 0.5924 |
 
 ### Production
 
