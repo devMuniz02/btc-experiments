@@ -2,28 +2,6 @@
 
 Market: btc_1h
 
-## Phase 1
-
-Passed variation: E_318c131a1fe3
-
-Decision: Passed to next phase
-
-Reason: validation-only ranking selected this variation.
-
-Validation balanced accuracy: 0.5924
-
-Validation direction accuracy: 0.7000
-
-Validation MCC: 0.2164
-
-Validation weighted score: 0.4179
-
-Test balanced accuracy: 0.6032
-
-Train-validation gap: 0.0369
-
-Candidates evaluated: 11
-
 ## Phase 2
 
 Passed variation: E_b5a719f4ddd6
@@ -132,22 +110,64 @@ Candidates evaluated: 22
 
 ## Phase 6
 
-Passed variation: E_8b5866680398
+Passed variation: E_6755631be6af
+
+Decision: Passed to next phase
+
+Reason: validation-only ranking selected this variation.
+
+Validation balanced accuracy: 0.5670
+
+Validation direction accuracy: 0.6733
+
+Validation MCC: 0.1531
+
+Validation weighted score: 0.3801
+
+Test balanced accuracy: 0.5601
+
+Train-validation gap: -0.0069
+
+Candidates evaluated: 20
+
+Passed variation: E_2ac32094ad22
+
+Decision: Passed to next phase
+
+Reason: validation-only ranking selected this variation.
+
+Validation balanced accuracy: 0.7459
+
+Validation direction accuracy: 0.7367
+
+Validation MCC: 0.4570
+
+Validation weighted score: 0.2777
+
+Test balanced accuracy: 0.7378
+
+Train-validation gap: 0.1278
+
+Candidates evaluated: 20
+
+## Phase 1
+
+Passed variation: E_3f1ece83de2d
 
 Decision: Current best
 
 Reason: highest validation direction accuracy so far.
 
-Validation balanced accuracy: 0.7213
+Validation balanced accuracy: 0.5125
 
-Validation direction accuracy: 0.7500
+Validation direction accuracy: 0.7900
 
-Validation MCC: 0.4295
+Validation MCC: 0.0586
 
-Validation weighted score: 0.3397
+Validation weighted score: 1.0800
 
-Test balanced accuracy: 0.7344
+Test balanced accuracy: 0.5037
 
-Train-validation gap: 0.0651
+Train-validation gap: 0.0046
 
-Candidates evaluated: 20
+Candidates evaluated: 11
