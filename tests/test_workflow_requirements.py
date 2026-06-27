@@ -1539,7 +1539,7 @@ def test_git_push_rebases_and_retries_after_remote_update(tmp_path: Path, monkey
     ]
 
 
-def test_explicit_git_push_force_adds_ignored_artifacts(tmp_path: Path, monkeypatch) -> None:
+def test_explicit_git_push_force_adds_ignored_artifacts_on_current_branch(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "experiments" / "btc_1h").mkdir(parents=True)
     (tmp_path / "experiments" / "btc_1h" / "result.json").write_text("{}", encoding="utf-8")
     calls: list[list[str]] = []
@@ -1565,11 +1565,53 @@ def test_explicit_git_push_force_adds_ignored_artifacts(tmp_path: Path, monkeypa
         paths=["experiments/btc_1h"],
         message="Update experiment artifacts",
         enabled=True,
-        target_branch="experiments",
     )
 
     assert result["status"] == "pushed"
     assert ["git", "add", "-f", "--", "experiments/btc_1h"] in calls
+
+
+def test_artifact_branch_push_keeps_only_artifact_root(tmp_path: Path) -> None:
+    origin = tmp_path / "origin.git"
+    repo = tmp_path / "repo"
+
+    def git(cwd: Path, *args: str) -> str:
+        return hf_state.subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git(tmp_path, "init", "--bare", str(origin))
+    git(tmp_path, "init", str(repo))
+    git(repo, "config", "user.name", "Test Bot")
+    git(repo, "config", "user.email", "bot@example.test")
+    (repo / "README.md").write_text("# code\n", encoding="utf-8")
+    (repo / "src").mkdir()
+    (repo / "src" / "app.py").write_text("print('code')\n", encoding="utf-8")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "Initial code")
+    git(repo, "branch", "-M", "main")
+    git(repo, "remote", "add", "origin", str(origin))
+    git(repo, "push", "origin", "main:main")
+    git(repo, "push", "origin", "main:experiments")
+
+    (repo / "experiments" / "btc_1h").mkdir(parents=True)
+    (repo / "experiments" / "btc_1h" / "result.json").write_text("{}", encoding="utf-8")
+
+    result = hf_state._push_artifact_branch(
+        repo,
+        paths=["experiments/btc_1h"],
+        message="Update experiment artifacts",
+        target_branch="experiments",
+    )
+
+    git(repo, "fetch", "origin", "experiments")
+    tree = git(repo, "ls-tree", "-r", "--name-only", "origin/experiments").splitlines()
+    assert result["status"] == "pushed"
+    assert tree == ["experiments/btc_1h/result.json"]
 
 
 def test_git_push_aborts_failed_rebase_retry(tmp_path: Path, monkeypatch) -> None:

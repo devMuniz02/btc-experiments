@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -252,6 +254,86 @@ def _push_with_rebase_retry(root: Path, target_branch: str | None = None) -> dic
     return {"push_attempts": 2, "rebased": True, "branch": branch}
 
 
+def _safe_relative_path(path: str) -> Path:
+    relative = Path(path)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError(f"Unsafe artifact path: {path}")
+    return relative
+
+
+def _copy_artifact_path(root: Path, worktree: Path, path: str) -> None:
+    relative = _safe_relative_path(path)
+    source = root / relative
+    target = worktree / relative
+    if target.exists():
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if source.is_dir():
+        shutil.copytree(source, target)
+    else:
+        shutil.copy2(source, target)
+
+
+def _remove_non_artifact_roots(worktree: Path, allowed_roots: set[str]) -> None:
+    for child in worktree.iterdir():
+        if child.name == ".git" or child.name in allowed_roots:
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
+def _git_stdout(root: Path, command: list[str], *, check: bool = True) -> str:
+    result = subprocess.run(command, cwd=root, check=check, capture_output=True, text=True)
+    return result.stdout.strip()
+
+
+def _copy_git_identity(source_root: Path, target_root: Path) -> None:
+    name = _git_stdout(source_root, ["git", "config", "--get", "user.name"], check=False)
+    email = _git_stdout(source_root, ["git", "config", "--get", "user.email"], check=False)
+    subprocess.run(["git", "config", "user.name", name or "github-actions[bot]"], cwd=target_root, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", email or "41898282+github-actions[bot]@users.noreply.github.com"],
+        cwd=target_root,
+        check=True,
+    )
+
+
+def _push_artifact_branch(root: Path, *, paths: list[str], message: str, target_branch: str) -> dict[str, Any]:
+    allowed_roots = {_safe_relative_path(path).parts[0] for path in paths}
+    tmp_parent = root / "tmp"
+    tmp_parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f"artifact-{target_branch.replace('/', '-')}-", dir=tmp_parent) as tmp:
+        artifact_repo = Path(tmp) / "repo"
+        remote_url = _git_stdout(root, ["git", "remote", "get-url", "origin"])
+        subprocess.run(["git", "init", str(artifact_repo)], cwd=root, check=True)
+        subprocess.run(["git", "remote", "add", "origin", remote_url], cwd=artifact_repo, check=True)
+        _copy_git_identity(root, artifact_repo)
+        fetch = subprocess.run(["git", "fetch", "origin", target_branch], cwd=artifact_repo)
+        if fetch.returncode == 0:
+            subprocess.run(["git", "checkout", "--detach", "FETCH_HEAD"], cwd=artifact_repo, check=True)
+        else:
+            subprocess.run(["git", "checkout", "--orphan", target_branch], cwd=artifact_repo, check=True)
+            subprocess.run(["git", "rm", "-r", "--cached", "."], cwd=artifact_repo, check=False)
+        _remove_non_artifact_roots(artifact_repo, allowed_roots)
+        for path in paths:
+            _copy_artifact_path(root, artifact_repo, path)
+        subprocess.run(["git", "add", "-A", "-f"], cwd=artifact_repo, check=True)
+        diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=artifact_repo)
+        if diff.returncode == 0:
+            return {"status": "skipped", "reason": "no staged changes", "branch": target_branch}
+        subprocess.run(["git", "commit", "-m", message], cwd=artifact_repo, check=True)
+        push = ["git", "push", "origin", f"HEAD:{target_branch}"]
+        if fetch.returncode == 0:
+            push = ["git", "push", "--force-with-lease", "origin", f"HEAD:{target_branch}"]
+        subprocess.run(push, cwd=artifact_repo, check=True)
+    return {"status": "pushed", "paths": paths, "message": message, "branch": target_branch}
+
+
 def explicit_git_push(
     *,
     root: Path,
@@ -265,6 +347,8 @@ def explicit_git_push(
     existing = [path for path in paths if (root / path).exists()]
     if not existing:
         return {"status": "skipped", "reason": "no public paths exist to push"}
+    if target_branch:
+        return _push_artifact_branch(root, paths=existing, message=message, target_branch=target_branch)
     preexisting = subprocess.run(
         ["git", "diff", "--cached", "--name-only"],
         cwd=root,
