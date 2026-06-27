@@ -1,0 +1,56 @@
+name: readme-update
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["prod"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: readme-update
+  cancel-in-progress: false
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Pull artifact branches
+        run: |
+          rm -rf experiments prod docs
+          git fetch origin experiments --depth=1 || true
+          git fetch origin prod --depth=1 || true
+          git checkout origin/experiments -- experiments 2>/dev/null || true
+          git checkout origin/prod -- prod 2>/dev/null || true
+      - run: python src/workflows/update_readme.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf experiments prod docs
+          git add README.md
+          for path in experiments prod docs; do
+            if [ -e "$path" ] || [ -n "$(git ls-files -- "$path")" ]; then
+              git add -A "$path"
+            fi
+          done
+          if git diff --cached --quiet; then
+            echo "README is already current."
+            exit 0
+          fi
+          git commit -m "Update public results snapshot"
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            git pull --rebase
+          done
+          exit 1

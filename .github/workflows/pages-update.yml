@@ -1,0 +1,72 @@
+name: pages-update
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["prod"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Pull artifact branches
+        run: |
+          rm -rf experiments prod docs
+          git fetch origin experiments --depth=1 || true
+          git fetch origin prod --depth=1 || true
+          git checkout origin/experiments -- experiments 2>/dev/null || true
+          git checkout origin/prod -- prod 2>/dev/null || true
+      - run: python scripts/run_public_audit.py
+      - run: python src/workflows/update_pages.py
+      - name: Publish docs to gh-pages branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          tmp="$(mktemp -d)"
+          cp -R docs/. "$tmp/"
+          git reset --hard
+          git clean -fd
+          git fetch origin gh-pages --depth=1 || true
+          if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+            git switch -C gh-pages origin/gh-pages
+          else
+            git switch --orphan gh-pages
+          fi
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R "$tmp"/. .
+          touch .nojekyll
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Pages are already current."
+            exit 0
+          fi
+          git commit -m "Update GitHub Pages"
+          git push origin gh-pages
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

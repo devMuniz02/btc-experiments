@@ -1,0 +1,62 @@
+# Secrets
+.env
+.env.*
+*.key
+*.pem
+secrets/
+*token*
+
+# Any file or folder whose name starts with private
+private*
+**/private*
+
+# Trigger-created private or unsafe public variants
+docs/
+experiments/
+prod/
+experiments/*/data/*raw*
+experiments/*/data/*private*
+experiments/*/results/*private*
+experiments/*/reports/*private*
+prod/*/data/*live*
+prod/*/data/*private*
+prod/*/results/*private*
+
+# Private/heavy model artifacts
+models/
+checkpoints/
+artifacts/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.pkl
+*.joblib
+
+# Data
+local_data/
+raw_data/
+processed_data/
+*.csv
+*.parquet
+*.feather
+*.h5
+*.hdf5
+
+# Logs and caches
+logs/
+.cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+*.log
+tmp/
+
+# Keep examples only when intentional
+!examples/**/*.csv
+!examples/**/*.parquet
+!config/config.example.yaml
