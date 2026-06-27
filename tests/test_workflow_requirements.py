@@ -756,8 +756,14 @@ def test_phase_completion_uses_absence_of_market_requests(tmp_path: Path) -> Non
     phase_dir.mkdir(parents=True)
     (phase_dir / "other_1h_phase1_request_01.yaml").write_text("current_phase: 1\n", encoding="utf-8")
     assert _phase_is_complete(tmp_path, "phase1", "btc_1h")
+    assert not _phase_is_complete(tmp_path, "phase1", "btc_1h", exhaustive=True)
+    result_dir = tmp_path / "experiment_state" / "btc_1h" / "phases" / "phase1" / "results"
+    result_dir.mkdir(parents=True)
+    (result_dir / "btc_1h_phase1_request_01.json").write_text("{}", encoding="utf-8")
+    assert _phase_is_complete(tmp_path, "phase1", "btc_1h", exhaustive=True)
     (phase_dir / "btc_1h_phase1_request_01.yaml").write_text("current_phase: 1\n", encoding="utf-8")
     assert not _phase_is_complete(tmp_path, "phase1", "btc_1h")
+    assert not _phase_is_complete(tmp_path, "phase1", "btc_1h", exhaustive=True)
 
 
 def test_completed_phase_advances_state_immediately(tmp_path: Path) -> None:

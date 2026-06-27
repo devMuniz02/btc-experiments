@@ -192,8 +192,12 @@ def _request_files(cache_root: Path, phase: str, market_id: str) -> list[Path]:
     return sorted(path for path in folder.glob("*.yaml") if market_id in path.name)
 
 
-def _phase_is_complete(cache_root: Path, phase: str, market_id: str) -> bool:
-    return not _request_files(cache_root, phase, market_id)
+def _phase_is_complete(cache_root: Path, phase: str, market_id: str, *, exhaustive: bool = False) -> bool:
+    if _request_files(cache_root, phase, market_id):
+        return False
+    if exhaustive:
+        return bool(_load_phase_results(cache_root, market_id, phase))
+    return True
 
 
 def _phase_index(phase: str) -> int:
@@ -851,7 +855,12 @@ def run_experiment_workflow(
         else:
             current = phase_folder(current)
 
-        if _phase_is_complete(cache_root, current, market_id):
+        if _phase_is_complete(
+            cache_root,
+            current,
+            market_id,
+            exhaustive=_workflow_profile(config) == EXHAUSTIVE_PROFILE,
+        ):
             if _workflow_profile(config) == EXHAUSTIVE_PROFILE:
                 finalized = _finalize_exhaustive_phase(
                     client,
