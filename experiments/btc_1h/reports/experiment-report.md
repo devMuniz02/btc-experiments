@@ -22,7 +22,7 @@ Test balanced accuracy: 0.6555
 
 Train-validation gap: -0.0152
 
-Candidates evaluated: 13
+Candidates evaluated: 10
 
 ## Phase 5
 
@@ -44,7 +44,7 @@ Test balanced accuracy: 0.7181
 
 Train-validation gap: 0.1752
 
-Candidates evaluated: 22
+Candidates evaluated: 44
 
 Passed variation: E_fa9e5d3588dc
 
@@ -64,7 +64,7 @@ Test balanced accuracy: 0.5601
 
 Train-validation gap: -0.0069
 
-Candidates evaluated: 22
+Candidates evaluated: 44
 
 Passed variation: E_602b0b34d2aa
 
@@ -84,7 +84,7 @@ Test balanced accuracy: 0.7378
 
 Train-validation gap: 0.1278
 
-Candidates evaluated: 22
+Candidates evaluated: 44
 
 ## Phase 6
 
