@@ -341,6 +341,11 @@ def test_phase_completion_triggers_reporting_and_final_production() -> None:
     assert "--github-branch prod" in prod
     assert "git switch --orphan gh-pages" in pages
     assert "git push origin gh-pages" in pages
+    assert "pages: write" in pages
+    assert "id-token: write" in pages
+    assert "actions/upload-pages-artifact@v3" in pages
+    assert "actions/deploy-pages@v4" in pages
+    assert "github-pages" in pages
     assert "git checkout origin/experiments -- experiments" in pages
     assert "git checkout origin/prod -- prod" in pages
     assert "git checkout origin/experiments -- experiments" in readme
