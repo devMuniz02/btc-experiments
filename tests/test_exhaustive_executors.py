@@ -170,6 +170,16 @@ def test_prod_uses_all_locked_ensemble_finalists() -> None:
     ]
 
 
+def test_regime_gated_locked_recipe_is_treated_as_ensemble() -> None:
+    config = {
+        "workflow": {"workflow_profile": "exhaustive_v1"},
+        "discovery_state": {"selected_recipes": [{"candidate_id": "regime_gated"}]},
+    }
+
+    assert _locked_production_candidate_ids(config) == ["regime_gated"]
+    assert _ensemble_mechanisms_for_request(config, {}, exhaustive=True, phase="prod") == ["regime_gated"]
+
+
 def test_fixed_phase6_default_reuses_phase5_resolved_hyperparameters() -> None:
     parent_parameters = {
         "seed": 42,
