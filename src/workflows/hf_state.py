@@ -274,7 +274,7 @@ def explicit_git_push(
     ).stdout.strip()
     if preexisting:
         raise RuntimeError("Refusing to commit because the git index already has staged files.")
-    subprocess.run(["git", "add", "--", *existing], cwd=root, check=True)
+    subprocess.run(["git", "add", "-f", "--", *existing], cwd=root, check=True)
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=root)
     if diff.returncode == 0:
         return {"status": "skipped", "reason": "no staged changes"}

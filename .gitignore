@@ -11,6 +11,9 @@ private*
 **/private*
 
 # Trigger-created private or unsafe public variants
+docs/
+experiments/
+prod/
 experiments/*/data/*raw*
 experiments/*/data/*private*
 experiments/*/results/*private*

@@ -1539,6 +1539,39 @@ def test_git_push_rebases_and_retries_after_remote_update(tmp_path: Path, monkey
     ]
 
 
+def test_explicit_git_push_force_adds_ignored_artifacts(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "experiments" / "btc_1h").mkdir(parents=True)
+    (tmp_path / "experiments" / "btc_1h" / "result.json").write_text("{}", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    class FakeCompleted:
+        def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def fake_run(command, **kwargs):
+        calls.append(list(command))
+        if command == ["git", "diff", "--cached", "--name-only"]:
+            return FakeCompleted(stdout="")
+        if command == ["git", "diff", "--cached", "--quiet"]:
+            return FakeCompleted(returncode=1)
+        return FakeCompleted()
+
+    monkeypatch.setattr(hf_state.subprocess, "run", fake_run)
+    monkeypatch.setattr(hf_state, "_push_with_rebase_retry", lambda root, target_branch=None: {"branch": target_branch})
+
+    result = hf_state.explicit_git_push(
+        root=tmp_path,
+        paths=["experiments/btc_1h"],
+        message="Update experiment artifacts",
+        enabled=True,
+        target_branch="experiments",
+    )
+
+    assert result["status"] == "pushed"
+    assert ["git", "add", "-f", "--", "experiments/btc_1h"] in calls
+
+
 def test_git_push_aborts_failed_rebase_retry(tmp_path: Path, monkeypatch) -> None:
     calls: list[list[str]] = []
 
