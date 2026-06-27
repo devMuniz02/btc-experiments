@@ -1534,6 +1534,8 @@ def test_hf_reset_paths_only_targets_matching_market(tmp_path: Path) -> None:
                 "markets/eth_1h.yaml",
                 "models/btc_1h/model.json",
                 "models/eth_1h/model.json",
+                "privateexperiments/btc_1h/results/candidates.json",
+                "privateexperiments/eth_1h/results/candidates.json",
                 "live_data/btc_1h/1h.parquet",
                 "live_data/eth_1h/1h.parquet",
             ]
@@ -1690,7 +1692,10 @@ def test_hf_output_paths_targets_all_generated_state_or_one_market() -> None:
     class FakeClient:
         def list_files(self, prefix: str = "") -> list[str]:
             return [
+                ".gitattributes",
+                "README.md",
                 "src/private/training/pipeline.py",
+                "requests/config.yaml",
                 "requests/configs/btc.yaml",
                 "requests/phase0/btc_1h_phase0_request_01.yaml",
                 "requests/phase0/eth_1h_phase0_request_01.yaml",
@@ -1698,6 +1703,8 @@ def test_hf_output_paths_targets_all_generated_state_or_one_market() -> None:
                 "markets/eth_1h.yaml",
                 "models/btc_1h/model.json",
                 "models/eth_1h/model.json",
+                "privateexperiments/btc_1h/results/candidates.json",
+                "privateexperiments/eth_1h/results/candidates.json",
                 "live_data/btc_1h/1h.parquet",
                 "live_data/eth_1h/1h.parquet",
             ]
@@ -1705,11 +1712,11 @@ def test_hf_output_paths_targets_all_generated_state_or_one_market() -> None:
     assert hf_output_paths(FakeClient()) == [
         "live_data/btc_1h/1h.parquet",
         "live_data/eth_1h/1h.parquet",
-        "markets/btc_1h.yaml",
-        "markets/eth_1h.yaml",
         "models/btc_1h/model.json",
         "models/eth_1h/model.json",
-        "requests/configs/btc.yaml",
+        "privateexperiments/btc_1h/results/candidates.json",
+        "privateexperiments/eth_1h/results/candidates.json",
+        "requests/config.yaml",
         "requests/phase0/btc_1h_phase0_request_01.yaml",
         "requests/phase0/eth_1h_phase0_request_01.yaml",
     ]
@@ -1717,6 +1724,8 @@ def test_hf_output_paths_targets_all_generated_state_or_one_market() -> None:
         "live_data/btc_1h/1h.parquet",
         "markets/btc_1h.yaml",
         "models/btc_1h/model.json",
+        "privateexperiments/btc_1h/results/candidates.json",
+        "requests/config.yaml",
         "requests/configs/btc.yaml",
         "requests/phase0/btc_1h_phase0_request_01.yaml",
     ]

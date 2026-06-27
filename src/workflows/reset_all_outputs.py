@@ -14,9 +14,10 @@ from src.workflows.hf_state import HfSettings, HfStateClient, LIVE_DATA_ROOT, MA
 
 MARKET_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 BRANCH_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
-LOCAL_OUTPUT_ROOTS = ("experiments", "prod", "docs", "privateexperiments")
+PRIVATE_EXPERIMENTS_ROOT = "privateexperiments"
+LOCAL_OUTPUT_ROOTS = ("experiments", "prod", "docs", PRIVATE_EXPERIMENTS_ROOT)
 LOCAL_CACHE_ROOTS = (REQUEST_ROOT, MARKETS_ROOT, "models", LIVE_DATA_ROOT, "experiment_state")
-HF_OUTPUT_PREFIXES = (REQUEST_ROOT, MARKETS_ROOT, "models", LIVE_DATA_ROOT, "experiment_state")
+HF_RESET_KEEP_ROOT_FILES = {".gitattributes", "README.md", "environment.yaml", "requirements.txt"}
 DEFAULT_EXPERIMENT_BRANCH = "experiments"
 DEFAULT_PROD_BRANCH = "prod"
 DEFAULT_PAGES_BRANCH = "gh-pages"
@@ -188,7 +189,7 @@ def hf_output_paths(client: Any, *, market: str | None = None) -> list[str]:
         if not normalized:
             continue
         if normalized_market is None:
-            if any(normalized == prefix or normalized.startswith(f"{prefix}/") for prefix in HF_OUTPUT_PREFIXES):
+            if not _is_expected_hf_reset_file(normalized):
                 paths.append(normalized)
             continue
         if normalized == f"{REQUEST_ROOT}/config.yaml":
@@ -207,7 +208,22 @@ def hf_output_paths(client: Any, *, market: str | None = None) -> list[str]:
             paths.append(normalized)
         elif normalized.startswith(f"experiment_state/{normalized_market}/"):
             paths.append(normalized)
+        elif normalized.startswith(f"{PRIVATE_EXPERIMENTS_ROOT}/{normalized_market}/"):
+            paths.append(normalized)
     return sorted(set(paths))
+
+
+def _is_expected_hf_reset_file(normalized: str) -> bool:
+    if normalized in HF_RESET_KEEP_ROOT_FILES:
+        return True
+    if normalized.startswith("src/"):
+        return True
+    if normalized.startswith(f"{REQUEST_ROOT}/configs/"):
+        return True
+    if normalized.startswith(f"{MARKETS_ROOT}/"):
+        relative = normalized.removeprefix(f"{MARKETS_ROOT}/")
+        return "/" not in relative and relative.endswith((".yaml", ".yml"))
+    return False
 
 
 def delete_hf_outputs(client: Any, *, paths: list[str], market: str | None = None) -> list[str]:
