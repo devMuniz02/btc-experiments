@@ -22,7 +22,7 @@ Test balanced accuracy: 0.6555
 
 Train-validation gap: -0.0152
 
-Candidates evaluated: 10
+Candidates evaluated: 13
 
 ## Phase 5
 
@@ -176,9 +176,9 @@ Candidates evaluated: 16
 
 Passed variation: E_8aabf6dc961c
 
-Decision: Current best
+Decision: Passed to next phase
 
-Reason: highest validation direction accuracy so far.
+Reason: validation-only ranking selected this variation.
 
 Validation balanced accuracy: 0.6669
 
