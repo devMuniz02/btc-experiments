@@ -607,6 +607,46 @@ def test_production_refresh_reuses_frozen_exhaustive_recipe() -> None:
     assert workflow["parent_recipes"] == family_recipes
 
 
+def test_production_refresh_trains_all_locked_top_k_recipes() -> None:
+    _require_private_training()
+    from src.private.training.pipeline import _model_ids_for_request
+
+    selected_recipes = [
+        {"candidate_id": "logistic_regression", "recipe_hash": "recipe-a", "decisions": {}},
+        {
+            "candidate_id": "regime_gated",
+            "recipe_hash": "recipe-b",
+            "decisions": {},
+            "family_recipes": [
+                {"candidate_id": "catboost"},
+                {"candidate_id": "transformer_lstm"},
+                {"candidate_id": "mlp"},
+            ],
+        },
+        {"candidate_id": "random_forest", "recipe_hash": "recipe-c", "decisions": {}},
+    ]
+    config = {
+        "project": {"default_seed": 42},
+        "experiments": {"workflow_profile": "exhaustive_v1"},
+        "discovery_state": {
+            "workflow_id": "workflow-1",
+            "catalog_hash": "catalog-1",
+            "selected_recipes": selected_recipes,
+        },
+    }
+
+    config["workflow"] = _workflow_for_run(config, "prod")
+
+    assert config["workflow"]["production_refresh"] is True
+    assert _model_ids_for_request(config) == [
+        "logistic_regression",
+        "catboost",
+        "transformer_lstm",
+        "mlp",
+        "random_forest",
+    ]
+
+
 def test_full_pipeline_smoke(tmp_path: Path) -> None:
     _require_private_training()
     request = tmp_path / "request.yaml"
