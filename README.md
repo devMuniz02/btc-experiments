@@ -45,6 +45,6 @@ The public pages intentionally show only market ids, numbered phases, anonymized
 
 | Market | Winner | Weighted score |
 |---|---|---:|
-| btc_1h | top_k | 1.7876 |
+| btc_1h | top_k | 1.7777 |
 
 <!-- RESULTS_SNAPSHOT_END -->
