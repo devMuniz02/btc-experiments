@@ -8815,7 +8815,7 @@
     "phase_id": "phase07",
     "public_summary": "Completed deterministic candidate evaluation.",
     "runtime_seconds": 1.2462,
-    "selected_for_next_phase": false,
+    "selected_for_next_phase": true,
     "selection_basis": "validation_only",
     "status": "worked",
     "test": {
@@ -9407,7 +9407,7 @@
     "phase_id": "phase07",
     "public_summary": "Completed deterministic candidate evaluation.",
     "runtime_seconds": 2.3884,
-    "selected_for_next_phase": false,
+    "selected_for_next_phase": true,
     "selection_basis": "validation_only",
     "status": "worked",
     "test": {
@@ -10608,7 +10608,7 @@
     "phase_id": "phase07",
     "public_summary": "Completed deterministic candidate evaluation.",
     "runtime_seconds": 1.2202,
-    "selected_for_next_phase": false,
+    "selected_for_next_phase": true,
     "selection_basis": "validation_only",
     "status": "worked",
     "test": {
