@@ -6,6 +6,28 @@ Market: btc_1h
 
 Passed variation: E_0a0697610b43
 
+Decision: Passed to next phase
+
+Reason: validation-only ranking selected this variation.
+
+Validation balanced accuracy: 0.5567
+
+Validation direction accuracy: 0.5567
+
+Validation MCC: 0.1486
+
+Validation weighted score: 0.3831
+
+Test balanced accuracy: 0.5222
+
+Train-validation gap: -0.0094
+
+Candidates evaluated: 7
+
+## Phase 2
+
+Passed variation: E_de4027382e79
+
 Decision: Current best
 
 Reason: highest validation direction accuracy so far.
@@ -22,4 +44,4 @@ Test balanced accuracy: 0.5222
 
 Train-validation gap: -0.0094
 
-Candidates evaluated: 7
+Candidates evaluated: 17
