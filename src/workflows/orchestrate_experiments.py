@@ -729,18 +729,16 @@ def _generate_phase_requests(cache_root: Path, config_path: Path, config: dict[s
         if spec
         else list(config.get("experiments", {}).get("denoising") or ["none"])
     )
+    if exhaustive and spec and spec.index <= 14 and "default" not in variations:
+        variations = ["default", *variations]
     frozen_catalog_hash = _catalog_hash() if exhaustive else ""
     previous_catalog_hash = str(config.get("discovery_state", {}).get("catalog_hash") or "")
     if exhaustive and previous_catalog_hash and previous_catalog_hash != frozen_catalog_hash:
         raise RuntimeError("The exhaustive catalog changed after the workflow started; reset with a new workflow id.")
     config_hash = _experiment_config_hash(config)
     parent_recipes = list(config.get("discovery_state", {}).get("selected_recipes") or [])
-    fixed_inheritance = str(config.get("experiments", {}).get("phase5_to_phase6_inheritance") or "unfixed") == "fixed"
-    parent_scoped_phases = {6, 7, 15, 16}
-    if fixed_inheritance:
-        parent_scoped_phases.add(5)
     request_parents = (
-        parent_recipes if exhaustive and spec and spec.index in parent_scoped_phases and parent_recipes else [None]
+        parent_recipes if exhaustive and spec and spec.index > 1 and parent_recipes else [None]
     )
     generated: list[Path] = []
     for parent in request_parents:

@@ -132,10 +132,9 @@ def test_phase_inheritance_mode_is_validated() -> None:
         validate_config(config)
 
 
-def test_fixed_phase5_requests_include_phase4_parent_recipe(tmp_path: Path) -> None:
+def test_phase5_requests_include_phase4_parent_recipe(tmp_path: Path) -> None:
     _require_private_training()
     config = _exhaustive_config()
-    config["experiments"]["phase5_to_phase6_inheritance"] = "fixed"
     config["discovery_state"] = {
         "catalog_hash": catalog_hash(),
         "selected_recipes": [
@@ -154,7 +153,8 @@ def test_fixed_phase5_requests_include_phase4_parent_recipe(tmp_path: Path) -> N
     generated = _generate_phase_requests(tmp_path, config_path, config, "phase05")
     payload = load_yaml(generated[0])
 
-    assert len(generated) == len(DISCOVERY_PHASES[4].variations)
+    assert len(generated) == len(DISCOVERY_PHASES[4].variations) + 1
+    assert payload["workflow"]["variation_id"] == "default"
     assert {load_yaml(path)["workflow"]["parent_recipe_hash"] for path in generated} == {"phase4-winner"}
     assert payload["workflow"]["parent_recipe"]["recipe_hash"] == "phase4-winner"
     assert payload["workflow"]["parent_recipe_hash"] == "phase4-winner"
@@ -193,6 +193,32 @@ def test_phase6_requests_receive_phase5_winning_recipe(tmp_path: Path) -> None:
         "variation_id": "random_forest",
         "parameters": {},
     }
+
+
+def test_default_requests_are_added_only_to_tuning_phases(tmp_path: Path) -> None:
+    _require_private_training()
+    config = _exhaustive_config()
+    config["discovery_state"] = {
+        "catalog_hash": catalog_hash(),
+        "selected_recipes": [
+            {
+                "candidate_id": "lstm",
+                "recipe_hash": "parent",
+                "decisions": {"lookback_window": {"variation_id": "lookback_48", "parameters": {}}},
+            }
+        ],
+    }
+    config_path = tmp_path / "markets" / "btc_1h.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(dump_yaml(config), encoding="utf-8")
+
+    phase14 = _generate_phase_requests(tmp_path, config_path, config, "phase14")
+    phase14_variations = [load_yaml(path)["workflow"]["variation_id"] for path in phase14]
+    assert phase14_variations[0] == "default"
+
+    phase15 = _generate_phase_requests(tmp_path, config_path, config, "phase15")
+    phase15_variations = [load_yaml(path)["workflow"]["variation_id"] for path in phase15]
+    assert "default" not in phase15_variations
 
 
 def test_fixed_phase5_selected_recipe_carries_full_phase4_recipe() -> None:
@@ -376,10 +402,11 @@ def test_exhaustive_phase_requests_are_deterministic_and_axis_specific(tmp_path:
 
     generated = _generate_phase_requests(tmp_path, path, config, "phase01")
 
-    assert len(generated) == len(DISCOVERY_PHASES[0].variations)
+    assert len(generated) == len(DISCOVERY_PHASES[0].variations) + 1
     payload = load_yaml(generated[0])
     assert payload["workflow"]["phase_id"] == "phase01"
     assert payload["workflow"]["axis"] == "target_horizon"
+    assert payload["workflow"]["variation_id"] == "default"
     assert payload["workflow"]["catalog_hash"] == catalog_hash()
     assert payload["workflow"]["parent_recipe_hash"].startswith("recipe_")
 

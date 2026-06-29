@@ -206,7 +206,7 @@ def test_fixed_phase6_default_reuses_phase5_resolved_hyperparameters() -> None:
     }
 
     decisions = _effective_decisions(config)
-    assert decisions["architecture"]["parameters"] == {}
+    assert "architecture" not in decisions
     assert _effective_hyperparameters(config, decisions) == parent_parameters
 
     config["workflow"]["variation_id"] = "hidden_size"
@@ -245,6 +245,67 @@ def test_fixed_phase5_model_family_reuses_phase4_resolved_hyperparameters() -> N
     decisions = _effective_decisions(config)
     assert decisions["model_family"] == {"variation_id": "lstm", "parameters": {}}
     assert _effective_hyperparameters(config, decisions) == parent_parameters
+
+
+def test_phase5_model_family_reuses_phase4_recipe_without_fixed_mode() -> None:
+    parent_parameters = {
+        "seed": 42,
+        "hidden_dim": 37,
+        "batch_size": 16,
+        "epochs": 23,
+        "strict_backend": True,
+        "dropout": 0.17,
+    }
+    config = {
+        "project": {"default_seed": 42},
+        "experiments": {"phase5_to_phase6_inheritance": "unfixed"},
+        "workflow": {
+            "workflow_profile": "exhaustive_v1",
+            "axis": "model_family",
+            "variation_id": "lstm",
+            "parent_recipe": {
+                "candidate_id": "logistic_regression",
+                "recipe_hash": "phase4-winner",
+                "decisions": {"lookback_window": {"variation_id": "lookback_48", "parameters": {}}},
+                "resolved_hyperparameters": parent_parameters,
+                "resolved_data_contract": {
+                    "feature_columns": ["return_context_48"],
+                    "scaling_transform": "quantile",
+                    "sequence_length": 48,
+                },
+            },
+        },
+    }
+
+    decisions = _effective_decisions(config)
+    request_params = _effective_hyperparameters(config, decisions)
+
+    assert decisions["lookback_window"]["variation_id"] == "lookback_48"
+    assert decisions["model_family"] == {"variation_id": "lstm", "parameters": {}}
+    assert request_params == parent_parameters
+    assert _fixed_model_family_parent_contract(config)["sequence_length"] == 48
+
+
+def test_default_variation_keeps_parent_decision_and_model() -> None:
+    config = {
+        "project": {"default_seed": 42},
+        "workflow": {
+            "workflow_profile": "exhaustive_v1",
+            "axis": "model_family",
+            "variation_id": "default",
+            "parent_recipe": {
+                "candidate_id": "lstm",
+                "decisions": {"lookback_window": {"variation_id": "lookback_48", "parameters": {}}},
+                "resolved_hyperparameters": {"seed": 42, "hidden_dim": 37},
+            },
+        },
+    }
+
+    decisions = _effective_decisions(config)
+
+    assert "model_family" not in decisions
+    assert decisions["lookback_window"]["variation_id"] == "lookback_48"
+    assert _model_ids_for_request(config) == ["lstm"]
 
 
 def test_fixed_phase5_uses_phase4_recipe_for_every_family_variation() -> None:
@@ -478,6 +539,15 @@ def test_sequence_regime_slice_can_reuse_full_validation_context() -> None:
 
     assert selected.any()
     assert len(probability[selected]) > 0
+
+
+def test_empty_robustness_slice_returns_empty_frame_without_crashing() -> None:
+    frame = _frame(36)
+    frame["return"] = 0.01
+
+    stressed = apply_robustness_stress(frame, "bear_slice", seed=42)
+
+    assert stressed.empty
 
 
 def test_sequence_warmup_provides_context_without_fitting_warmup_labels() -> None:
