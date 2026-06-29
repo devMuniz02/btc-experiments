@@ -1563,7 +1563,7 @@
     "phase_id": "phase02",
     "public_summary": "Completed deterministic candidate evaluation.",
     "runtime_seconds": 1.126,
-    "selected_for_next_phase": false,
+    "selected_for_next_phase": true,
     "selection_basis": "validation_only",
     "status": "worked",
     "test": {
