@@ -280,6 +280,28 @@ Candidates evaluated: 51
 
 Passed variation: E_5082d3c6e284
 
+Decision: Passed to next phase
+
+Reason: validation-only ranking selected this variation.
+
+Validation balanced accuracy: 0.5867
+
+Validation direction accuracy: 0.5867
+
+Validation MCC: 0.1858
+
+Validation weighted score: 1.0970
+
+Test balanced accuracy: 0.5407
+
+Train-validation gap: -0.0116
+
+Candidates evaluated: 255
+
+## Phase 9
+
+Passed variation: E_f9081d84fe9e
+
 Decision: Current best
 
 Reason: highest validation direction accuracy so far.
@@ -296,4 +318,4 @@ Test balanced accuracy: 0.5407
 
 Train-validation gap: -0.0116
 
-Candidates evaluated: 255
+Candidates evaluated: 135
