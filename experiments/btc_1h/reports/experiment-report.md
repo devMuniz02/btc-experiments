@@ -412,9 +412,9 @@ Candidates evaluated: 165
 
 Passed variation: E_4ae1868d9dbf
 
-Decision: Current best
+Decision: Passed to next phase
 
-Reason: highest validation direction accuracy so far.
+Reason: validation-only ranking selected this variation.
 
 Validation balanced accuracy: 0.6000
 
@@ -429,3 +429,65 @@ Test balanced accuracy: 0.5226
 Train-validation gap: -0.0216
 
 Candidates evaluated: 192
+
+Passed variation: E_9163a64b7587
+
+Decision: Passed to next phase
+
+Reason: validation-only ranking selected this variation.
+
+Validation balanced accuracy: 0.6000
+
+Validation direction accuracy: 0.6000
+
+Validation MCC: 0.2169
+
+Validation weighted score: 1.1855
+
+Test balanced accuracy: 0.5226
+
+Train-validation gap: -0.0216
+
+Candidates evaluated: 192
+
+Passed variation: E_cdaff90151a5
+
+Decision: Passed to next phase
+
+Reason: validation-only ranking selected this variation.
+
+Validation balanced accuracy: 0.5900
+
+Validation direction accuracy: 0.5900
+
+Validation MCC: 0.1840
+
+Validation weighted score: 0.9433
+
+Test balanced accuracy: 0.5347
+
+Train-validation gap: -0.0318
+
+Candidates evaluated: 192
+
+## Phase 15
+
+Passed variation: E_2b80ede08a42
+
+Decision: Current best
+
+Reason: highest validation direction accuracy so far.
+
+Validation balanced accuracy: 0.6434
+
+Validation direction accuracy: 0.6467
+
+Validation MCC: 0.2963
+
+Validation weighted score: 1.1344
+
+Test balanced accuracy: 0.5347
+
+Train-validation gap: -0.0852
+
+Candidates evaluated: 97
