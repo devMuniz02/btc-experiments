@@ -62647,7 +62647,7 @@
     "phase_id": "phase11",
     "public_summary": "Completed deterministic candidate evaluation.",
     "runtime_seconds": 4.2811,
-    "selected_for_next_phase": false,
+    "selected_for_next_phase": true,
     "selection_basis": "validation_only",
     "status": "worked",
     "test": {
