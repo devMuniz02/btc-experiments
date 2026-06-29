@@ -4,9 +4,11 @@ import numpy as np
 import pandas as pd
 
 
-def build_basic_features(frame: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+def build_basic_features(frame: pd.DataFrame, target_frame: pd.DataFrame | None = None) -> tuple[pd.DataFrame, list[str]]:
     data = frame.copy()
     close = data["close"].astype(float)
+    target_source = target_frame if target_frame is not None else frame
+    target_close = target_source["close"].astype(float).reset_index(drop=True)
     open_ = data["open"].astype(float)
     high = data["high"].astype(float)
     low = data["low"].astype(float)
@@ -33,7 +35,7 @@ def build_basic_features(frame: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     else:
         data["hour"] = 0.0
         data["dayofweek"] = 0.0
-    data["target"] = (close.shift(-1) > close).astype(int)
+    data["target"] = (target_close.shift(-1) > target_close).astype(int)
     data = data.iloc[:-1].reset_index(drop=True)
     features = [
         "return",

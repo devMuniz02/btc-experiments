@@ -216,6 +216,17 @@ def test_causal_denoising_variations_do_not_use_future_rows(tmp_path: Path) -> N
         assert baseline["timestamp"].iloc[10] == frame["timestamp"].iloc[10]
 
 
+def test_input_transforms_do_not_change_raw_close_targets() -> None:
+    raw = _ohlcv_frame(4)
+    raw["close"] = [10.0, 11.0, 10.0, 12.0]
+    transformed_inputs = raw.copy()
+    transformed_inputs["close"] = [10.0, 9.0, 8.0, 7.0]
+
+    featured, _ = build_basic_features(transformed_inputs, target_frame=raw)
+
+    assert featured["target"].tolist() == [1, 0, 1]
+
+
 def test_fetch_uses_cached_live_parquet_before_network(tmp_path: Path, monkeypatch) -> None:
     config, _ = load_config(CONFIG)
     cache_path = _write_live_cache(tmp_path, config, provider="kraken")
