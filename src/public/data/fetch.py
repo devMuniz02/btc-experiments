@@ -66,7 +66,7 @@ def max_feature_window(config: dict[str, Any]) -> int:
 
 def max_target_horizon(config: dict[str, Any]) -> int:
     if config.get("experiments", {}).get("workflow_profile") == "exhaustive_v1":
-        return 24
+        return 1
     return 0
 
 

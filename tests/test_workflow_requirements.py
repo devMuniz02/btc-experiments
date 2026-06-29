@@ -200,7 +200,7 @@ def test_fixed_phase5_selected_recipe_carries_full_phase4_recipe() -> None:
         "recipe_hash": "phase4-winner",
         "candidate_id": "lstm",
         "decisions": {
-            "target_horizon": {"variation_id": "next_6", "parameters": {}},
+            "target_horizon": {"variation_id": "raw_next_1", "parameters": {}},
             "lookback_window": {"variation_id": "lookback_48", "parameters": {}},
         },
         "resolved_hyperparameters": {"seed": 42, "hidden_dim": 37, "epochs": 23},
@@ -228,7 +228,7 @@ def test_fixed_phase5_selected_recipe_carries_full_phase4_recipe() -> None:
     assert carried["custom_private_marker"] == "keep-me"
     assert carried["parent_recipe_hash"] == "phase4-winner"
     assert carried["candidate_id"] == "random_forest"
-    assert carried["decisions"]["target_horizon"]["variation_id"] == "next_6"
+    assert carried["decisions"]["target_horizon"]["variation_id"] == "raw_next_1"
     assert carried["decisions"]["lookback_window"]["variation_id"] == "lookback_48"
     assert carried["decisions"]["model_family"] == {"variation_id": "random_forest", "parameters": {}}
     assert carried["resolved_hyperparameters"] == baseline["resolved_hyperparameters"]

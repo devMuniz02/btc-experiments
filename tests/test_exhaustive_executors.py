@@ -353,16 +353,23 @@ def test_robustness_reuses_only_registry_model_ids() -> None:
     assert _model_ids_for_request(config) == ["lstm"]
 
 
-def test_all_target_feature_transform_and_search_presets_are_executable_and_distinct() -> None:
+def test_target_phase_only_allows_raw_next_close_direction() -> None:
     frame = _frame(320)
     frame["close"] = 100.0 * (1.0 + frame["return"]).cumprod()
-    target_outputs = []
-    for item in PHASES[0].variations:
-        transformed = _apply_target_variation(frame, item.variation_id)
-        assert not transformed.empty
-        assert set(transformed["target"].unique()).issubset({0, 1})
-        target_outputs.append((item.variation_id, len(transformed), int(transformed["target"].sum())))
-    assert len({output[0] for output in target_outputs}) == len(PHASES[0].variations)
+    assert [item.variation_id for item in PHASES[0].variations] == ["raw_next_1"]
+
+    transformed = _apply_target_variation(frame.drop(columns=["target"]), "raw_next_1")
+
+    assert not transformed.empty
+    assert transformed["target"].tolist() == (frame["close"].shift(-1) > frame["close"]).astype(int).iloc[:-1].tolist()
+    assert _apply_target_variation(frame, "raw_next_1")["target"].tolist() == frame["target"].tolist()
+    with pytest.raises(ValueError):
+        _apply_target_variation(frame, "next_6")
+
+
+def test_all_feature_transform_and_search_presets_are_executable_and_distinct() -> None:
+    frame = _frame(320)
+    frame["close"] = 100.0 * (1.0 + frame["return"]).cumprod()
 
     available = [
         "open", "high", "low", "close", "volume", "return", "log_return", "hl_range", "oc_body",
@@ -505,7 +512,7 @@ def test_carried_recipe_decisions_are_replayed_with_family_specific_training() -
                 {
                     "candidate_id": "lstm",
                     "decisions": {
-                        "target_horizon": {"variation_id": "next_6", "parameters": {}},
+                        "target_horizon": {"variation_id": "raw_next_1", "parameters": {}},
                         "architecture": {"variation_id": "dropout", "parameters": {"architecture_search": True, "dropout": 0.35}},
                         "training_hyperparams": {"variation_id": "seed_43", "parameters": {"training_search": True, "seed": 43}},
                     },
@@ -515,7 +522,7 @@ def test_carried_recipe_decisions_are_replayed_with_family_specific_training() -
     }
     decisions = _effective_decisions(config)
     params = _effective_hyperparameters(config, decisions)
-    assert decisions["target_horizon"]["variation_id"] == "next_6"
+    assert decisions["target_horizon"]["variation_id"] == "raw_next_1"
     assert decisions["objective_loss"]["variation_id"] == "focal"
     assert params["dropout"] == 0.35
     assert params["seed"] == 43
