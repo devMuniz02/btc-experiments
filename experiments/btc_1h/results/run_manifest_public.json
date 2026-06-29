@@ -1,0 +1,73 @@
+{
+  "config_hash": "dbff33b7b163c3e12a77edd6e44b004972f6f3e3a7a0dbafb28a25aa9d5c6d01",
+  "deployment": {
+    "export_format": "json_bundle",
+    "private_hf_required": true,
+    "production_promotion": false,
+    "public_safe": false
+  },
+  "discovery_phases": {
+    "phase01": "request_completed"
+  },
+  "drift_cache_key": "258fa2ddfebb437d9a39f97f05a95289fee01b1ce623071406b479016c59f864",
+  "hardware_profile": {
+    "cpu_available": true,
+    "cpu_count": 4,
+    "cuda_available": false,
+    "oom_fallback_enabled": true,
+    "platform": "Linux-6.17.0-1018-azure-x86_64-with-glibc2.39",
+    "profile_kind": "static_safe_default",
+    "profile_mode": "public_safe_no_allocation",
+    "safe_batch_size": 32,
+    "safe_sequence_length": 24,
+    "selected_device": "cpu",
+    "streaming_dataloader_fallback": true,
+    "torch_available": true,
+    "torch_version": "2.12.1+cpu",
+    "training_allowed": true,
+    "training_gate": "hardware profile completed before training"
+  },
+  "market_id": "btc_1h",
+  "outputs": {
+    "pages": [
+      "/home/runner/work/btc-experiments/btc-experiments/docs/index.md",
+      "/home/runner/work/btc-experiments/btc-experiments/docs/experiments.md",
+      "/home/runner/work/btc-experiments/btc-experiments/docs/prod.md"
+    ],
+    "prod_public": "/home/runner/work/btc-experiments/btc-experiments/prod/btc_1h/results/production_public.json",
+    "public_report": "/home/runner/work/btc-experiments/btc-experiments/experiments/btc_1h/reports/experiment-report.md"
+  },
+  "phases": {
+    "P0": "done",
+    "P1": "done",
+    "P10": "done",
+    "P11": "done",
+    "P12": "done",
+    "P13": "done",
+    "P14": "done",
+    "P15": "done",
+    "P16": "done",
+    "P17": "done",
+    "P18": "done",
+    "P19": "done",
+    "P2": "done",
+    "P20": "done",
+    "P21": "done",
+    "P22": "done",
+    "P23": "done",
+    "P3": "done",
+    "P4": "done",
+    "P5": "done",
+    "P6": "done",
+    "P7": "done",
+    "P8": "done",
+    "P9": "done"
+  },
+  "production_test_policy": "final_locked_winner",
+  "provider_used": "binanceus",
+  "reporting_test_policy": "all_candidates",
+  "selection_policy": "validation_only",
+  "status": "completed",
+  "test_policy": "all_candidates_reported",
+  "workflow_profile": "exhaustive_v1"
+}
