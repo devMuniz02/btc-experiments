@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+import warnings
 from pathlib import Path
 
 pytest.importorskip("src.private.training.discovery_catalog", reason="private training source not hydrated from HF")
@@ -34,6 +35,7 @@ from src.private.training.pipeline import (
     _locked_production_candidate_ids,
     _materialize_recipe_feature_columns,
     _model_ids_for_request,
+    _normalize_data_variation,
     _parent_recipe_for_result,
     _production_public_id,
     _require_exact_top_k,
@@ -41,6 +43,7 @@ from src.private.training.pipeline import (
     _trainable_ids_for_recipe,
 )
 from src.private.training.sklearn_models import NumpyLogisticRegression, TorchResidualMLP
+from src.private.training.sklearn_models import build_tabular_model
 from src.public.data.scaling import fit_train_only_transform
 
 
@@ -308,6 +311,40 @@ def test_default_variation_keeps_parent_decision_and_model() -> None:
     assert _model_ids_for_request(config) == ["lstm"]
 
 
+def test_phase1_default_variation_maps_to_next_1() -> None:
+    config = {
+        "project": {"default_seed": 42},
+        "workflow": {
+            "workflow_profile": "exhaustive_v1",
+            "axis": "target_horizon",
+            "variation_id": "default",
+        },
+    }
+
+    decisions = _effective_decisions(config)
+
+    assert decisions["target_horizon"]["variation_id"] == "next_1"
+
+
+def test_default_data_variation_maps_to_raw() -> None:
+    assert _normalize_data_variation("default") == "raw"
+    assert _normalize_data_variation("ema") == "ema"
+
+
+def test_linear_svm_does_not_use_deprecated_probability_parameter() -> None:
+    pytest.importorskip("sklearn")
+    frame = _frame(24)
+    model = build_tabular_model("linear_svm", {"seed": 42})
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        model.fit(frame[["feature_a", "feature_b"]], frame["target"])
+        probability = model.predict_proba(frame[["feature_a", "feature_b"]])
+
+    assert len(probability) == len(frame)
+    assert not any("probability" in str(item.message) and "deprecated" in str(item.message) for item in captured)
+
+
 def test_fixed_phase5_uses_phase4_recipe_for_every_family_variation() -> None:
     parent_parameters = {
         "seed": 42,
@@ -539,6 +576,20 @@ def test_sequence_regime_slice_can_reuse_full_validation_context() -> None:
 
     assert selected.any()
     assert len(probability[selected]) > 0
+
+
+def test_torch_sequence_prediction_uses_batches() -> None:
+    frame = _frame(40)
+    model = build_sequence_model(
+        "lstm",
+        {"strict_backend": True, "sequence_length": 4, "hidden_dim": 8, "epochs": 1, "seed": 42, "batch_size": 3},
+    )
+    model.fit_sequence(frame, ["feature_a", "feature_b"])
+
+    probability, indices = model.predict_proba_sequence(frame)
+
+    assert len(probability) == len(indices)
+    assert len(probability) > 3
 
 
 def test_empty_robustness_slice_returns_empty_frame_without_crashing() -> None:

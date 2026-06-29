@@ -302,6 +302,7 @@ def _experiment_table(experiment: dict[str, Any], market_index: int) -> str:
         parent = [
             toggle, _status(_focus(status)), escape(selected),
             escape(_number(_metric(metrics[0], "balanced_accuracy"))) if best else "-",
+            escape(_number(_metric(metrics[0], "direction_accuracy"))) if best else "-",
             escape(_number(_metric(metrics[1], "balanced_accuracy"))) if best else "-",
             escape(_number(_metric(metrics[1], "direction_accuracy"))) if best else "-",
             escape(_number(_metric(metrics[2], "balanced_accuracy"))) if best else "-",
@@ -328,6 +329,7 @@ def _experiment_table(experiment: dict[str, Any], market_index: int) -> str:
                 escape(label), _status(_focus(str(candidate.get("status") or "completed"))),
                 "Yes" if candidate.get("selected_for_next_phase") else "-",
                 escape(_number(_metric(candidate.get("train"), "balanced_accuracy"))),
+                escape(_number(_metric(candidate.get("train"), "direction_accuracy"))),
                 escape(_number(_metric(candidate.get("validation"), "balanced_accuracy"))),
                 escape(_number(_metric(candidate.get("validation"), "direction_accuracy"))),
                 escape(_number(_metric(candidate.get("test"), "balanced_accuracy"))),
@@ -338,7 +340,7 @@ def _experiment_table(experiment: dict[str, Any], market_index: int) -> str:
                 escape(_number(gap)) if gap is not None else "-",
             ]
             rows.append(f'<tr class="candidate-row" data-group="{escape(group)}" hidden>' + "".join(f"<td>{cell}</td>" for cell in expanded) + "</tr>")
-    headers = ["Phase", "Status", "Selected", "Train BA", "Valid BA", "Valid Direction", "Test BA", "Test Direction", "Valid MCC", "Valid Weighted", "Runtime", "Train-Valid Gap"]
+    headers = ["Phase", "Status", "Selected", "Train BA", "Train Direction", "Valid BA", "Valid Direction", "Test BA", "Test Direction", "Valid MCC", "Valid Weighted", "Runtime", "Train-Valid Gap"]
     return f'<div class="table-wrap"><table class="phase-table"><thead><tr>{"".join(f"<th>{escape(h)}</th>" for h in headers)}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
 
 

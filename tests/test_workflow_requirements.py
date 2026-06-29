@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from datetime import datetime, timedelta, timezone
@@ -49,6 +50,19 @@ from src.workflows.reset_all_outputs import (
     reset_remote_branch,
 )
 from src.private.training.pipeline import _render_report
+
+
+def test_configure_native_runtime_caps_thread_env(monkeypatch) -> None:
+    from src.public.runtime import configure_native_runtime
+
+    names = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS")
+    for name in names:
+        monkeypatch.delenv(name, raising=False)
+
+    configure_native_runtime()
+
+    for name in names:
+        assert os.environ[name] == "1"
 
 
 def _require_private_training() -> None:
@@ -102,6 +116,21 @@ def test_exhaustive_catalog_has_all_16_ordered_phases() -> None:
     assert all(phase.variations for phase in DISCOVERY_PHASES)
     assert len(catalog_hash()) == 64
     validate_config(_exhaustive_config())
+
+
+def test_exhaustive_ranking_metric_accepts_mcc() -> None:
+    config = _exhaustive_config()
+    config["experiments"]["ranking_metric"] = "mcc"
+
+    validate_config(config)
+
+
+def test_exhaustive_ranking_metric_rejects_unknown_metric() -> None:
+    config = _exhaustive_config()
+    config["experiments"]["ranking_metric"] = "not_a_metric"
+
+    with pytest.raises(ValueError, match="ranking_metric must be one of"):
+        validate_config(config)
 
 
 def test_direction_accuracy_is_primary_and_test_metrics_do_not_rank() -> None:
@@ -1317,6 +1346,7 @@ def test_update_pages_generates_docs_from_public_artifacts(tmp_path: Path) -> No
     assert "target_horizon" not in experiments_html
     assert "v1" in (tmp_path / "docs" / "prod.html").read_text(encoding="utf-8")
     assert "Active From" in (tmp_path / "docs" / "prod.html").read_text(encoding="utf-8")
+    assert "Train Direction" in experiments_html
     assert "Valid Direction" in experiments_html
     assert "Test Direction" in experiments_html
     assert "m0-phase02" not in experiments_html

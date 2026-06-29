@@ -6,7 +6,23 @@ from typing import Any
 SUPPORTED_MARKET_TYPES = {"crypto", "stocks"}
 SUPPORTED_TIMEFRAMES = {"5min", "15min", "1h", "4h", "1d"}
 EXHAUSTIVE_PHASES = [f"phase{index:02d}" for index in range(1, 17)]
-SUPPORTED_RANKING_METRICS = {"balanced_accuracy", "direction_accuracy"}
+SUPPORTED_RANKING_METRICS = {
+    "accuracy",
+    "auc",
+    "balanced_accuracy",
+    "cumulative_return",
+    "direction_accuracy",
+    "f1",
+    "mcc",
+    "precision",
+    "precision_up",
+    "recall",
+    "recall_up",
+    "sharpe",
+    "trade_count",
+    "trading_proxy_score",
+    "weighted_score",
+}
 SUPPORTED_PHASE_INHERITANCE = {"fixed", "unfixed"}
 MIN_PRODUCTION_START_UTC = datetime(2026, 6, 1, tzinfo=timezone.utc)
 REQUIRED_TOP_LEVEL = (
@@ -100,7 +116,8 @@ def validate_config(config: dict[str, Any]) -> None:
             raise ValueError("exhaustive_v1 requires experiments.phases phase01 through phase16 in order")
         ranking_metric = str(config["experiments"].get("ranking_metric") or "direction_accuracy")
         if ranking_metric not in SUPPORTED_RANKING_METRICS:
-            raise ValueError("experiments.ranking_metric must be balanced_accuracy or direction_accuracy")
+            supported = ", ".join(sorted(SUPPORTED_RANKING_METRICS))
+            raise ValueError(f"experiments.ranking_metric must be one of: {supported}")
         inheritance = str(config["experiments"].get("phase5_to_phase6_inheritance") or "unfixed")
         if inheritance not in SUPPORTED_PHASE_INHERITANCE:
             raise ValueError("experiments.phase5_to_phase6_inheritance must be fixed or unfixed")
