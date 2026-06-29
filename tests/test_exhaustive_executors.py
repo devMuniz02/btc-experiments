@@ -353,18 +353,32 @@ def test_robustness_reuses_only_registry_model_ids() -> None:
     assert _model_ids_for_request(config) == ["lstm"]
 
 
-def test_target_phase_only_allows_raw_next_close_direction() -> None:
+def test_target_phase_allows_training_horizon_without_changing_metric_target() -> None:
     frame = _frame(320)
     frame["close"] = 100.0 * (1.0 + frame["return"]).cumprod()
-    assert [item.variation_id for item in PHASES[0].variations] == ["raw_next_1"]
+    assert [item.variation_id for item in PHASES[0].variations] == [
+        "next_1",
+        "next_2",
+        "next_4",
+        "next_6",
+        "next_12",
+        "next_24",
+        "raw_next_1",
+    ]
 
-    transformed = _apply_target_variation(frame.drop(columns=["target"]), "raw_next_1")
+    raw_target = (frame["close"].shift(-1) > frame["close"]).astype(int).iloc[:-1].tolist()
+    transformed = _apply_target_variation(frame.drop(columns=["target"]), "next_6")
 
     assert not transformed.empty
-    assert transformed["target"].tolist() == (frame["close"].shift(-1) > frame["close"]).astype(int).iloc[:-1].tolist()
-    assert _apply_target_variation(frame, "raw_next_1")["target"].tolist() == frame["target"].tolist()
+    assert transformed["target"].tolist() == raw_target
+    metric_close = frame["close"].iloc[:-1].reset_index(drop=True)
+    expected_training_target = (metric_close.shift(-6) > metric_close).astype(float)
+    expected_training_target.loc[metric_close.shift(-6).isna()] = np.nan
+    assert transformed["training_target"].dropna().tolist() == expected_training_target.dropna().tolist()
+    assert transformed["training_target"].isna().sum() == 6
+    assert _apply_target_variation(frame, "next_6")["target"].tolist() == frame["target"].tolist()
     with pytest.raises(ValueError):
-        _apply_target_variation(frame, "next_6")
+        _apply_target_variation(frame, "triple_barrier")
 
 
 def test_all_feature_transform_and_search_presets_are_executable_and_distinct() -> None:
