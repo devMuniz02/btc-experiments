@@ -1,3 +1,3 @@
 # Experiments
 
-- BTC 1H: 5/16
+- BTC 1H: 6/16
