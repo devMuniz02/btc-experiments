@@ -39,12 +39,10 @@ The public pages intentionally show only market ids, numbered phases, anonymized
 
 | Market | Phase progress | Top validation BA |
 |---|---:|---:|
-| btc_1h | Complete | 1.0000 |
+| btc_1h | 1/16 | 0.5924 |
 
 ### Production
 
-| Market | Winner | Weighted score |
-|---|---|---:|
-| btc_1h | top_k | 1.7777 |
+No public production results yet.
 
 <!-- RESULTS_SNAPSHOT_END -->
