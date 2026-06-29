@@ -7,8 +7,8 @@
       "weighted_score": 0.7318
     },
     "sanitized_validation_summary": {
-      "accuracy": 0.59,
-      "weighted_score": 0.9433
+      "accuracy": 0.5034,
+      "weighted_score": 0.9301
     },
     "status": "worked",
     "test": {
@@ -52,24 +52,24 @@
       "weighted_score": 0.3171029698560923
     },
     "validation": {
-      "accuracy": 0.59,
-      "auc": 0.5492444444444444,
-      "balanced_accuracy": 0.5900000000000001,
-      "calibration_error": 0.0005945237535749381,
-      "cumulative_return": 36.253545061245624,
-      "direction_accuracy": 0.59,
-      "f1": 0.6283987915407855,
-      "loss": 0.6928653985419195,
-      "max_drawdown": -10.315874355485429,
-      "mcc": 0.18397168921295412,
-      "precision": 0.574585635359116,
-      "precision_up": 0.574585635359116,
-      "recall": 0.6933333333333334,
-      "recall_up": 0.6933333333333334,
-      "sharpe": 3.5334044555808184,
-      "trade_count": 300.0,
-      "trading_proxy_score": 3.5334044555808184,
-      "weighted_score": 0.9433404455580818
+      "accuracy": 0.5033557046979866,
+      "auc": 0.5060132426467276,
+      "balanced_accuracy": 0.5033557046979866,
+      "calibration_error": 0.0006025404842479043,
+      "cumulative_return": 43.06824959835981,
+      "direction_accuracy": 0.5033557046979866,
+      "f1": 0.5595238095238095,
+      "loss": 0.6930632305478416,
+      "max_drawdown": -13.260188062667627,
+      "mcc": 0.0069409306843357865,
+      "precision": 0.5026737967914439,
+      "precision_up": 0.5026737967914439,
+      "recall": 0.6308724832214765,
+      "recall_up": 0.6308724832214765,
+      "sharpe": 4.267276824012176,
+      "trade_count": 298.0,
+      "trading_proxy_score": 4.267276824012176,
+      "weighted_score": 0.9300833870992042
     }
   }
 ]
